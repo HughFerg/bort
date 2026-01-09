@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(python3:*)",
+      "Bash(source venv/bin/activate)",
+      "Bash(pip install:*)",
+      "Bash(ffmpeg:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(curl:*)",
+      "Bash(cat:*)",
+      "Bash(pkill:*)",
+      "Bash(uvicorn:*)",
+      "Bash(open http://127.0.0.1:8000)",
+      "WebSearch"
+    ]
+  }
+}

@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bort Search</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23FFB6D9'/><circle cx='50' cy='50' r='20' fill='%23FFF'/><ellipse cx='45' cy='40' rx='8' ry='6' fill='%23FF69B4' opacity='0.6'/><ellipse cx='60' cy='45' rx='6' ry='5' fill='%23FF69B4' opacity='0.6'/><ellipse cx='50' cy='55' rx='7' ry='5' fill='%23FF69B4' opacity='0.6'/></svg>">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Comic Sans MS', 'Comic Sans', cursive, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #0F4C81;
+            background-image:
+                repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.03) 10px, rgba(255,255,255,.03) 20px),
+                radial-gradient(circle at 20% 80%, #FFC20E 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, #F47920 0%, transparent 50%);
+            color: #FFF;
+            line-height: 1.6;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 25px;
+            padding: 20px;
+            background: rgba(255, 194, 14, 0.1);
+            border: 3px solid #FFC20E;
+            border-radius: 15px;
+            box-shadow: 0 4px 0 #F47920, 0 8px 20px rgba(0,0,0,0.3);
+        }
+
+        h1 {
+            color: #FFC20E;
+            font-size: 2.5rem;
+            margin-bottom: 8px;
+            text-shadow: 3px 3px 0px #F47920, 6px 6px 0px rgba(0,0,0,0.2);
+            letter-spacing: 2px;
+        }
+
+        .subtitle {
+            color: #FFF;
+            font-size: 1rem;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        .search-container {
+            max-width: 700px;
+            margin: 0 auto 25px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 15px;
+            border: 2px solid rgba(255, 194, 14, 0.3);
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        input {
+            flex: 1;
+            padding: 12px 16px;
+            font-size: 15px;
+            border: 3px solid #FFC20E;
+            border-radius: 10px;
+            background: #FFF;
+            color: #000;
+            outline: none;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        input:focus {
+            border-color: #F47920;
+            transform: scale(1.02);
+            box-shadow: 0 0 10px rgba(255, 194, 14, 0.5);
+        }
+
+        input::placeholder {
+            color: #999;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 15px;
+            background: #FFC20E;
+            color: #0F4C81;
+            border: 3px solid #F47920;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 700;
+            transition: all 0.2s;
+            font-family: inherit;
+            box-shadow: 0 4px 0 #F47920;
+            text-transform: uppercase;
+        }
+
+        button:hover {
+            background: #FFD84D;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 0 #F47920;
+        }
+
+        button:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #F47920;
+        }
+
+        button:disabled {
+            background: #999;
+            cursor: not-allowed;
+            border-color: #666;
+            box-shadow: 0 2px 0 #666;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .button-row button {
+            flex: 1;
+        }
+
+        .random-btn {
+            background: #F47920;
+            border-color: #D35400;
+            box-shadow: 0 4px 0 #D35400;
+        }
+
+        .random-btn:hover {
+            background: #FF8C42;
+            box-shadow: 0 6px 0 #D35400;
+        }
+
+        .random-btn:active {
+            box-shadow: 0 2px 0 #D35400;
+        }
+
+        .filters {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid rgba(255, 194, 14, 0.3);
+            margin-bottom: 15px;
+        }
+
+        .filters-title {
+            color: #FFC20E;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+
+        .filter-group {
+            margin-bottom: 10px;
+        }
+
+        .filter-label {
+            color: #FFF;
+            font-size: 12px;
+            margin-bottom: 5px;
+            display: block;
+        }
+
+        .filter-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .filter-pill {
+            padding: 5px 12px;
+            font-size: 11px;
+            background: rgba(255, 255, 255, 0.2);
+            color: #FFF;
+            border: 2px solid rgba(255, 194, 14, 0.5);
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .filter-pill:hover {
+            background: rgba(255, 194, 14, 0.3);
+            border-color: #FFC20E;
+        }
+
+        .filter-pill.active {
+            background: #FFC20E;
+            color: #0F4C81;
+            border-color: #F47920;
+            font-weight: bold;
+        }
+
+        .active-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .active-filter-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: #F47920;
+            color: #FFF;
+            border-radius: 15px;
+            font-size: 11px;
+            font-weight: bold;
+            border: 2px solid #D35400;
+        }
+
+        .active-filter-tag button {
+            background: none;
+            border: none;
+            color: #FFF;
+            font-size: 14px;
+            cursor: pointer;
+            padding: 0;
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            box-shadow: none;
+            transition: all 0.2s;
+        }
+
+        .active-filter-tag button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: none;
+        }
+
+        .examples {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: center;
+        }
+
+        .example-btn {
+            padding: 6px 12px;
+            font-size: 11px;
+            background: rgba(255, 255, 255, 0.15);
+            color: #FFC20E;
+            border: 2px solid rgba(255, 194, 14, 0.4);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            text-transform: none;
+            font-weight: normal;
+            box-shadow: none;
+        }
+
+        .example-btn:hover {
+            background: #FFC20E;
+            color: #0F4C81;
+            border-color: #FFC20E;
+            transform: translateY(-1px);
+        }
+
+        .stats {
+            text-align: center;
+            color: #FFF;
+            font-size: 13px;
+            margin-bottom: 20px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        .loading {
+            text-align: center;
+            color: #FFC20E;
+            font-size: 16px;
+            padding: 40px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .error {
+            text-align: center;
+            color: #FF6B6B;
+            padding: 20px;
+            background: rgba(255, 107, 107, 0.2);
+            border-radius: 10px;
+            border: 3px solid #FF6B6B;
+            margin: 20px auto;
+            max-width: 600px;
+        }
+
+        .results {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .result {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+            border: 3px solid #FFC20E;
+            box-shadow: 0 4px 0 #F47920, 0 8px 15px rgba(0,0,0,0.3);
+        }
+
+        .result:hover {
+            transform: translateY(-4px) rotate(-1deg);
+            box-shadow: 0 8px 0 #F47920, 0 12px 25px rgba(0,0,0,0.4);
+        }
+
+        .result img {
+            width: 100%;
+            aspect-ratio: 16/9;
+            object-fit: cover;
+            display: block;
+        }
+
+        .result-info {
+            padding: 10px;
+            background: #FFF;
+            color: #000;
+        }
+
+        .result-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .episode {
+            color: #0F4C81;
+            font-weight: 700;
+            font-size: 12px;
+        }
+
+        .time {
+            color: #666;
+            font-size: 11px;
+        }
+
+        .score-bar {
+            width: 100%;
+            height: 4px;
+            background: #E0E0E0;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 6px;
+            border: 1px solid #CCC;
+        }
+
+        .score-fill {
+            height: 100%;
+            background: linear-gradient(to right, #FFC20E, #F47920);
+            transition: width 0.3s;
+        }
+
+        .score-text {
+            color: #F47920;
+            font-size: 10px;
+            margin-top: 2px;
+            font-weight: bold;
+        }
+
+        .caption {
+            color: #666;
+            font-size: 11px;
+            margin: 6px 0;
+            line-height: 1.3;
+            font-style: italic;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+
+        .characters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin: 6px 0;
+        }
+
+        .character-tag {
+            padding: 2px 8px;
+            font-size: 10px;
+            background: #FFC20E;
+            color: #0F4C81;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid #F47920;
+        }
+
+        .character-tag:hover {
+            background: #F47920;
+            color: #FFF;
+            transform: scale(1.1);
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(255, 59, 48, 0.95);
+            color: white;
+            border: 2px solid white;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transition: all 0.2s;
+            z-index: 10;
+        }
+
+        .delete-btn:hover {
+            background: rgba(255, 0, 0, 1);
+            transform: scale(1.15) rotate(90deg);
+            box-shadow: 0 4px 12px rgba(255,0,0,0.4);
+        }
+
+        .result {
+            position: relative;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 50px 20px;
+            color: #FFF;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+
+            .results {
+                grid-template-columns: 1fr;
+            }
+
+            .search-box {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+            }
+
+            .button-row {
+                flex-direction: column;
+            }
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 76, 129, 0.95);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            max-width: 90%;
+            max-height: 90%;
+            position: relative;
+        }
+
+        .modal-content img {
+            max-width: 100%;
+            max-height: 90vh;
+            border-radius: 10px;
+            border: 4px solid #FFC20E;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+        }
+
+        .modal-close {
+            position: absolute;
+            top: -50px;
+            right: 0;
+            background: #F47920;
+            color: #FFF;
+            border: 3px solid #D35400;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 24px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 0 #D35400;
+            transition: all 0.2s;
+        }
+
+        .modal-close:hover {
+            background: #FF8C42;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 0 #D35400;
+        }
+
+        .modal-close:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #D35400;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🍩 BORT SEARCH 🍩</h1>
+        <p class="subtitle">Search 5,915 frames by character, scene, or action</p>
+    </header>
+
+    <div class="search-container">
+        <div class="search-box">
+            <input
+                type="text"
+                id="query"
+                placeholder="Search by character, scene, or action..."
+                onkeydown="if(event.key==='Enter') search()"
+                autofocus
+            >
+            <button onclick="search()" id="searchBtn">Search</button>
+        </div>
+
+        <div class="button-row">
+            <button class="random-btn" onclick="randomFrame()">🎲 Random Frame</button>
+        </div>
+
+        <div class="filters">
+            <div class="filters-title">🔍 FILTERS</div>
+
+            <div class="filter-group">
+                <div class="filter-label">Season:</div>
+                <div class="filter-pills" id="seasonFilters">
+                    <button class="filter-pill" data-season="1" onclick="toggleFilter('season', '1')">Season 1</button>
+                </div>
+            </div>
+
+            <div class="filter-group">
+                <div class="filter-label">Character:</div>
+                <div class="filter-pills" id="characterFilters">
+                    <!-- Character filters will be added dynamically -->
+                </div>
+            </div>
+
+            <div id="activeFiltersContainer"></div>
+        </div>
+
+        <div class="examples">
+            <button class="example-btn" onclick="searchExample('homer looking sad on the couch')">Homer on couch</button>
+            <button class="example-btn" onclick="searchExample('bart writing on chalkboard')">Bart chalkboard</button>
+            <button class="example-btn" onclick="searchExample('burns saying excellent')">Mr. Burns</button>
+            <button class="example-btn" onclick="searchExample('lisa playing saxophone')">Lisa saxophone</button>
+            <button class="example-btn" onclick="searchExample('marge with blue hair')">Marge</button>
+        </div>
+    </div>
+
+    <div class="stats" id="stats">Loading database stats...</div>
+
+    <div id="results"></div>
+
+    <div class="modal" id="modal" onclick="closeModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeModal()">×</button>
+            <img id="modalImage" src="" alt="">
+        </div>
+    </div>
+
+    <script>
+        let currentQuery = '';
+        let activeFilters = {
+            season: new Set(),
+            character: new Set()
+        };
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/stats');
+                const stats = await response.json();
+                document.getElementById('stats').innerHTML =
+                    `📺 ${stats.total_frames.toLocaleString()} frames • ${stats.episodes} episode${stats.episodes > 1 ? 's' : ''}`;
+            } catch (err) {
+                document.getElementById('stats').innerHTML = '';
+            }
+        }
+
+        function toggleFilter(type, value) {
+            if (activeFilters[type].has(value)) {
+                activeFilters[type].delete(value);
+            } else {
+                activeFilters[type].add(value);
+            }
+            updateFilterUI();
+            if (currentQuery) {
+                search();
+            }
+        }
+
+        function updateFilterUI() {
+            // Update pill states
+            document.querySelectorAll('.filter-pill').forEach(pill => {
+                const season = pill.dataset.season;
+                const character = pill.dataset.character;
+                if (season && activeFilters.season.has(season)) {
+                    pill.classList.add('active');
+                } else if (character && activeFilters.character.has(character)) {
+                    pill.classList.add('active');
+                } else {
+                    pill.classList.remove('active');
+                }
+            });
+
+            // Update active filters display
+            const container = document.getElementById('activeFiltersContainer');
+            const allFilters = [
+                ...Array.from(activeFilters.season).map(s => ({ type: 'season', value: s, label: `Season ${s}` })),
+                ...Array.from(activeFilters.character).map(c => ({ type: 'character', value: c, label: c }))
+            ];
+
+            if (allFilters.length > 0) {
+                container.innerHTML = `
+                    <div class="active-filters">
+                        ${allFilters.map(f => `
+                            <div class="active-filter-tag">
+                                ${f.label}
+                                <button onclick="toggleFilter('${f.type}', '${f.value}')" title="Remove filter">×</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else {
+                container.innerHTML = '';
+            }
+        }
+
+        function addCharacterFilter(character) {
+            // Add character to filter pills if not already there
+            const filterPills = document.getElementById('characterFilters');
+            const existing = filterPills.querySelector(`[data-character="${character}"]`);
+            if (!existing) {
+                const pill = document.createElement('button');
+                pill.className = 'filter-pill';
+                pill.dataset.character = character;
+                pill.textContent = character;
+                pill.onclick = () => toggleFilter('character', character);
+                filterPills.appendChild(pill);
+            }
+            // Activate the filter
+            toggleFilter('character', character);
+        }
+
+        function buildSearchQuery() {
+            const query = document.getElementById('query').value.trim();
+            let fullQuery = query;
+
+            // Add character filters to query
+            if (activeFilters.character.size > 0) {
+                const chars = Array.from(activeFilters.character).join(', ');
+                fullQuery = fullQuery ? `${fullQuery} with ${chars}` : chars;
+            }
+
+            return fullQuery;
+        }
+
+        async function search() {
+            const query = buildSearchQuery();
+            if (!query) return;
+
+            currentQuery = document.getElementById('query').value.trim();
+            const resultsDiv = document.getElementById('results');
+            const searchBtn = document.getElementById('searchBtn');
+
+            resultsDiv.innerHTML = '<div class="loading">🔍 Searching...</div>';
+            searchBtn.disabled = true;
+
+            try {
+                let url = `/search?q=${encodeURIComponent(query)}&limit=24`;
+
+                // Add season filter
+                if (activeFilters.season.size > 0) {
+                    const seasons = Array.from(activeFilters.season).map(s => `s${s.padStart(2, '0')}`);
+                    url += `&season=${seasons.join(',')}`;
+                }
+
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    throw new Error(`Search failed: ${response.statusText}`);
+                }
+
+                const results = await response.json();
+
+                if (results.length === 0) {
+                    resultsDiv.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🤷</div>
+                            <h2>D'oh! No results found</h2>
+                            <p>Try a different search term or adjust your filters</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                resultsDiv.innerHTML = results.map(r => {
+                    const characters = r.characters ? r.characters.split(', ').filter(c => c.trim()) : [];
+                    return `
+                        <div class="result" onclick="openModal('${r.image_url}')">
+                            <button class="delete-btn" onclick="event.stopPropagation(); deleteFrame('${r.path}')" title="Delete frame">×</button>
+                            <img src="${r.image_url}" alt="${r.episode}" loading="lazy">
+                            <div class="result-info">
+                                <div class="result-meta">
+                                    <span class="episode">${r.episode}</span>
+                                    <span class="time">${formatTime(r.timestamp)}</span>
+                                </div>
+                                ${characters.length > 0 ? `
+                                    <div class="characters">
+                                        ${characters.map(c => `
+                                            <span class="character-tag" onclick="event.stopPropagation(); addCharacterFilter('${c}')">${c}</span>
+                                        `).join('')}
+                                    </div>
+                                ` : ''}
+                                ${r.caption ? `<div class="caption">${r.caption}</div>` : ''}
+                                <div class="score-bar">
+                                    <div class="score-fill" style="width: ${r.score * 100}%"></div>
+                                </div>
+                                <div class="score-text">${(r.score * 100).toFixed(1)}% match</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (err) {
+                resultsDiv.innerHTML = `
+                    <div class="error">
+                        <h3>❌ Error</h3>
+                        <p>${err.message}</p>
+                    </div>
+                `;
+            } finally {
+                searchBtn.disabled = false;
+            }
+        }
+
+        async function randomFrame() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">🎲 Getting random frame...</div>';
+
+            try {
+                const response = await fetch('/random');
+                if (!response.ok) {
+                    throw new Error(`Failed to get random frame: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                const characters = result.characters ? result.characters.split(', ').filter(c => c.trim()) : [];
+
+                resultsDiv.innerHTML = `
+                    <div class="result" onclick="openModal('${result.image_url}')">
+                        <button class="delete-btn" onclick="event.stopPropagation(); deleteFrame('${result.path}')" title="Delete frame">×</button>
+                        <img src="${result.image_url}" alt="${result.episode}" loading="lazy">
+                        <div class="result-info">
+                            <div class="result-meta">
+                                <span class="episode">${result.episode}</span>
+                                <span class="time">${formatTime(result.timestamp)}</span>
+                            </div>
+                            ${characters.length > 0 ? `
+                                <div class="characters">
+                                    ${characters.map(c => `
+                                        <span class="character-tag" onclick="event.stopPropagation(); addCharacterFilter('${c}')">${c}</span>
+                                    `).join('')}
+                                </div>
+                            ` : ''}
+                            ${result.caption ? `<div class="caption">${result.caption}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            } catch (err) {
+                resultsDiv.innerHTML = `
+                    <div class="error">
+                        <h3>❌ Error</h3>
+                        <p>${err.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        function searchExample(query) {
+            document.getElementById('query').value = query;
+            search();
+        }
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+
+        function openModal(imageUrl) {
+            document.getElementById('modalImage').src = imageUrl;
+            document.getElementById('modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('active');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+
+        async function deleteFrame(path) {
+            if (!confirm('Are you sure you want to delete this frame from the index?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/frame?path=${encodeURIComponent(path)}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Delete failed: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+
+                // Re-run the current search to refresh results
+                if (currentQuery) {
+                    await search();
+                } else {
+                    // If no search, just reload stats
+                    await loadStats();
+                    document.getElementById('results').innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">✓</div>
+                            <h2>Frame deleted successfully</h2>
+                            <p>The frame has been removed from the index</p>
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                alert(`Failed to delete frame: ${err.message}`);
+            }
+        }
+
+        loadStats();
+        updateFilterUI();
+    </script>
+</body>
+</html>

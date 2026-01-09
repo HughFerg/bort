@@ -1,0 +1,9 @@
+open-clip-torch
+torch
+lancedb
+fastapi
+uvicorn[standard]
+pillow
+pyarrow
+transformers
+accelerate
