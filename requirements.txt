@@ -1,3 +1,4 @@
+# Core dependencies for search API
 open-clip-torch
 torch
 lancedb
@@ -5,5 +6,12 @@ fastapi
 uvicorn[standard]
 pillow
 pyarrow
-transformers
-accelerate
+slowapi
+
+# Maintenance scripts (black frame removal, character tagging)
+numpy
+tqdm
+pandas
+
+# Character detection model (optional - only for retagging)
+ultralytics

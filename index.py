@@ -6,9 +6,12 @@ This script:
 1. Extracts frames from video files at regular intervals using ffmpeg
 2. Generates CLIP embeddings for each frame
 3. Stores embeddings and metadata in LanceDB for fast similarity search
+4. Optionally uses improved character detection via HuggingFace ViT
+5. Optionally uses auto intro/credits detection
 """
 
 import argparse
+import json
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -69,9 +72,10 @@ def generate_caption(image_path: str, processor, caption_model) -> str:
     return caption
 
 
-def detect_characters(image_path: str, model, preprocess, tokenizer, max_chars: int = 10, min_score: float = 0.27, score_gap: float = 0.04) -> list[str]:
+def detect_characters_clip(image_path: str, model, preprocess, tokenizer, max_chars: int = 10, min_score: float = 0.27, score_gap: float = 0.04) -> list[str]:
     """
     Detect Simpsons characters in an image using zero-shot CLIP classification.
+    (Legacy method - use detect_characters_vit for better accuracy)
 
     Args:
         image_path: Path to image file
@@ -131,10 +135,49 @@ def detect_characters(image_path: str, model, preprocess, tokenizer, max_chars: 
     return detected
 
 
+def load_intro_cache(cache_file: str = "intro_credits.json") -> dict:
+    """Load cached intro/credits timestamps if available."""
+    cache_path = Path(cache_file)
+    if cache_path.exists():
+        with open(cache_path) as f:
+            return json.load(f)
+    return {}
+
+
+def get_episode_timestamps(filename: str, cache: dict, default_intro: int = 90, default_credits: int = 40) -> tuple[int, int]:
+    """
+    Get intro end and credits start timestamps for an episode.
+
+    Args:
+        filename: Video/episode filename
+        cache: Loaded cache from detect_intro.py
+        default_intro: Default intro duration in seconds
+        default_credits: Default credits duration in seconds
+
+    Returns:
+        Tuple of (intro_end_seconds, credits_start_seconds)
+    """
+    # Try exact match
+    if filename in cache:
+        data = cache[filename]
+        return (int(data.get("intro_end", default_intro)),
+                int(data.get("credits_start", -default_credits)))
+
+    # Try partial match
+    for cached_name, data in cache.items():
+        if filename.split(".")[0] in cached_name or cached_name.split(".")[0] in filename:
+            return (int(data.get("intro_end", default_intro)),
+                    int(data.get("credits_start", -default_credits)))
+
+    return (default_intro, -default_credits)
+
+
 def index_frames(
     frames_dir: str,
     db_path: str = "data/simpsons.lance",
-    frame_interval: int = 3
+    frame_interval: int = 3,
+    use_vit_detection: bool = False,
+    intro_cache_file: str = None
 ) -> None:
     """
     Index all frames in directory to LanceDB.
@@ -143,6 +186,8 @@ def index_frames(
         frames_dir: Root directory containing episode subdirectories with frames
         db_path: Path to LanceDB database
         frame_interval: Seconds between frames (for timestamp calculation)
+        use_vit_detection: Use HuggingFace ViT for character detection (more accurate)
+        intro_cache_file: Path to intro/credits cache JSON (from detect_intro.py)
     """
     print("Loading CLIP model...")
     model, _, preprocess = open_clip.create_model_and_transforms(
@@ -156,6 +201,23 @@ def index_frames(
     processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
     caption_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
     caption_model.eval()
+
+    # Load improved character detector if requested
+    char_detector = None
+    if use_vit_detection:
+        try:
+            from character_detection import SimpsonsCharacterDetector
+            print("Loading ViT character detector...")
+            char_detector = SimpsonsCharacterDetector(use_vit=True, use_clip_fallback=True)
+        except ImportError as e:
+            print(f"Warning: Could not load ViT detector ({e}), using CLIP fallback")
+
+    # Load intro/credits cache if provided
+    intro_cache = {}
+    if intro_cache_file:
+        intro_cache = load_intro_cache(intro_cache_file)
+        if intro_cache:
+            print(f"Loaded intro/credits timestamps for {len(intro_cache)} episodes")
 
     db = lancedb.connect(db_path)
     frames_path = Path(frames_dir)
@@ -175,7 +237,13 @@ def index_frames(
         max_frame_num = max(int(p.stem.split("_")[1]) for p in frame_paths)
         episode_length_sec = max_frame_num * frame_interval
 
+        # Get intro/credits timestamps (from cache or defaults)
+        intro_end, credits_start = get_episode_timestamps(episode_id, intro_cache)
+        if credits_start < 0:  # Negative means "from end"
+            credits_start = episode_length_sec + credits_start
+
         print(f"Indexing {episode_id} ({len(frame_paths)} frames)...")
+        print(f"  Filtering: intro < {intro_end}s, credits > {credits_start}s")
 
         # Process frames for this episode
         records = []
@@ -185,17 +253,22 @@ def index_frames(
             frame_num = int(frame_path.stem.split("_")[1])
             timestamp_sec = frame_num * frame_interval
 
-            # Skip intro (first 90 seconds) and credits (last 40 seconds)
-            if timestamp_sec <= 90:
+            # Skip intro and credits
+            if timestamp_sec <= intro_end:
                 skipped_intro += 1
                 continue
-            if timestamp_sec >= episode_length_sec - 40:
+            if timestamp_sec >= credits_start:
                 skipped_credits += 1
                 continue
 
             embedding = embed_image(str(frame_path), model, preprocess)
             caption = generate_caption(str(frame_path), processor, caption_model)
-            characters = detect_characters(str(frame_path), model, preprocess, tokenizer)
+
+            # Use ViT detector if available, otherwise fall back to CLIP
+            if char_detector:
+                characters = char_detector.detect(str(frame_path))
+            else:
+                characters = detect_characters_clip(str(frame_path), model, preprocess, tokenizer)
 
             records.append({
                 "episode": episode_id,
@@ -210,8 +283,15 @@ def index_frames(
         # Write this episode to database
         if records:
             if first_episode:
-                print(f"  → Writing {len(records)} frames to database (creating table)...")
-                db.create_table("frames", records, mode="overwrite")
+                # Check if table already exists
+                existing_tables = db.table_names()
+                if "frames" in existing_tables:
+                    print(f"  → Appending {len(records)} frames to existing database...")
+                    table = db.open_table("frames")
+                    table.add(records)
+                else:
+                    print(f"  → Creating new database with {len(records)} frames...")
+                    db.create_table("frames", records)
                 first_episode = False
             else:
                 print(f"  → Appending {len(records)} frames to database...")
@@ -303,6 +383,16 @@ def main():
         default="data/simpsons.lance",
         help="Path to LanceDB database (default: data/simpsons.lance)"
     )
+    parser.add_argument(
+        "--use-vit",
+        action="store_true",
+        help="Use HuggingFace ViT model for improved character detection"
+    )
+    parser.add_argument(
+        "--intro-cache",
+        type=str,
+        help="Path to intro/credits cache JSON (from detect_intro.py)"
+    )
 
     args = parser.parse_args()
 
@@ -311,7 +401,13 @@ def main():
             parser.error("--videos is required unless --index-only is specified")
         process_videos(args.videos, args.frames, args.interval)
 
-    index_frames(args.frames, args.db, args.interval)
+    index_frames(
+        args.frames,
+        args.db,
+        args.interval,
+        use_vit_detection=args.use_vit,
+        intro_cache_file=args.intro_cache
+    )
 
 
 if __name__ == "__main__":

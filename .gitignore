@@ -26,3 +26,13 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Training artifacts
+runs/
+training/data/
+training/train_env/
+
+# Environment configuration (keep .env.example)
+.env
+.env.local
+.env.production

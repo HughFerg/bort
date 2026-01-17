@@ -6,21 +6,59 @@ Provides a REST API for searching frames by natural language descriptions
 using CLIP embeddings and vector similarity search.
 """
 
+import os
+import secrets
 from pathlib import Path
 
 import lancedb
 import open_clip
 import torch
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+# Rate limiting
+limiter = Limiter(key_func=get_remote_address)
+
+# Admin authentication
+security = HTTPBasic()
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify admin credentials for protected endpoints."""
+    if not ADMIN_PASSWORD:
+        # No password set - allow access (development mode)
+        return True
+
+    # Use secrets.compare_digest to prevent timing attacks
+    password_correct = secrets.compare_digest(
+        credentials.password.encode("utf-8"),
+        ADMIN_PASSWORD.encode("utf-8")
+    )
+
+    if not password_correct:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return True
 
 app = FastAPI(
     title="Simpsons Scene Search",
     description="Search Simpsons frames by natural language descriptions",
     version="1.0.0"
 )
+
+# Register rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -67,8 +105,41 @@ def root():
     return FileResponse("frontend/index.html")
 
 
+@app.get("/test-delete")
+def test_delete():
+    """Serve the delete test page."""
+    return FileResponse("test_delete.html")
+
+
+@app.get("/legal")
+def legal():
+    """Return legal disclaimer and copyright information."""
+    return {
+        "disclaimer": (
+            "This is a fan-made research/educational tool. "
+            "The Simpsons and all related content are trademarks of and copyrighted by "
+            "20th Television and The Walt Disney Company. "
+            "This site is not affiliated with or endorsed by the copyright holders."
+        ),
+        "fair_use": (
+            "Content is used under fair use doctrine (17 U.S.C. Section 107) for "
+            "non-commercial, educational, and research purposes. This transformative use "
+            "provides a search and indexing service, not streaming or distribution of full episodes."
+        ),
+        "takedown": (
+            "For DMCA takedown requests or other legal inquiries, please contact the site administrator."
+        ),
+        "similar_projects": [
+            "Frinkiac (frinkiac.com)",
+            "Morbotron (morbotron.com)"
+        ]
+    }
+
+
 @app.get("/search")
+@limiter.limit("60/minute")
 def search(
+    request: Request,
     q: str = Query(..., description="Natural language search query"),
     limit: int = Query(20, ge=1, le=100, description="Number of results to return")
 ):
@@ -131,26 +202,77 @@ def search(
 
 
 @app.get("/stats")
-def stats():
+@limiter.limit("30/minute")
+def stats(request: Request):
     """Get database statistics."""
+    import re
     try:
         count = table.count_rows()
         # Get all episodes using a dummy search
         dummy_vector = [0.0] * 512
         all_frames = table.search(dummy_vector).limit(count).to_list()
-        unique_episodes = len(set(r["episode"] for r in all_frames))
+        episodes = set(r["episode"] for r in all_frames)
+        unique_episodes = len(episodes)
+
+        # Extract unique seasons from episode names
+        seasons = set()
+        for ep in episodes:
+            match = re.search(r's(\d+)e', ep, re.I)
+            if match:
+                seasons.add(int(match.group(1)))
 
         return {
             "total_frames": count,
             "episodes": unique_episodes,
-            "frames_per_episode_avg": count / unique_episodes if unique_episodes > 0 else 0
+            "frames_per_episode_avg": count / unique_episodes if unique_episodes > 0 else 0,
+            "seasons": sorted(seasons)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/characters")
+@limiter.limit("30/minute")
+def get_characters(request: Request):
+    """Get all characters with their frame counts, sorted by popularity."""
+    try:
+        from collections import Counter
+
+        count = table.count_rows()
+        dummy_vector = [0.0] * 512
+        all_frames = table.search(dummy_vector).limit(count).to_list()
+
+        # Count character occurrences
+        character_counts = Counter()
+        for frame in all_frames:
+            chars = frame.get("characters", "")
+            if chars:
+                for char in chars.split(", "):
+                    char = char.strip()
+                    if char:
+                        character_counts[char] += 1
+
+        # Sort by count descending
+        sorted_characters = sorted(
+            character_counts.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        return {
+            "characters": [
+                {"name": name, "count": count}
+                for name, count in sorted_characters
+            ],
+            "total": len(sorted_characters)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/random")
-def random_frame():
+@limiter.limit("30/minute")
+def random_frame(request: Request):
     """Get a random frame from the database."""
     try:
         import random
@@ -185,8 +307,66 @@ def random_frame():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.delete("/frame")
-def delete_frame(path: str = Query(..., description="Path to the frame to delete")):
+@app.get("/similar")
+@limiter.limit("30/minute")
+def similar_frames(
+    request: Request,
+    path: str = Query(..., description="Path to the source frame"),
+    limit: int = Query(12, ge=1, le=50, description="Number of similar frames to return")
+):
+    """
+    Find frames similar to a given frame.
+
+    Args:
+        path: Path to the source frame
+        limit: Maximum number of results (1-50)
+
+    Returns:
+        List of similar frames with similarity scores
+    """
+    try:
+        # Find the source frame by path
+        count = table.count_rows()
+        dummy_vector = [0.0] * 512
+        all_frames = table.search(dummy_vector).limit(count).to_list()
+
+        source_frame = None
+        for frame in all_frames:
+            if frame["path"] == path:
+                source_frame = frame
+                break
+
+        if not source_frame:
+            raise HTTPException(status_code=404, detail="Source frame not found")
+
+        # Search using the source frame's embedding
+        results = table.search(source_frame["vector"]).limit(limit + 1).to_list()
+
+        # Filter out the source frame itself
+        results = [r for r in results if r["path"] != path][:limit]
+
+        return [{
+            "episode": r["episode"],
+            "frame": r["frame"],
+            "path": r["path"],
+            "timestamp": r["timestamp"],
+            "caption": r.get("caption", ""),
+            "characters": r.get("characters", ""),
+            "score": max(0.0, min(1.0, 1 - r["_distance"])),
+            "image_url": f"/frames/{r['episode']}/{r['frame']}"
+        } for r in results]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/frame/delete")
+def delete_frame(
+    path: str = Query(..., description="Path to the frame to delete"),
+    _admin: bool = Depends(verify_admin)
+):
     """
     Delete a frame from the index.
 
@@ -197,8 +377,10 @@ def delete_frame(path: str = Query(..., description="Path to the frame to delete
         Success message with deleted frame info
     """
     try:
+        print(f"[DELETE] Received path: {path}")
         # Delete the frame from the table using SQL-like filter
         table.delete(f"path = '{path}'")
+        print(f"[DELETE] Successfully deleted: {path}")
 
         return {
             "success": True,
@@ -206,6 +388,7 @@ def delete_frame(path: str = Query(..., description="Path to the frame to delete
             "path": path
         }
     except Exception as e:
+        print(f"[DELETE] Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to delete frame: {str(e)}")
 
 

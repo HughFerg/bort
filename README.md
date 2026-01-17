@@ -4,6 +4,16 @@ A local search engine that lets you find Simpsons scenes by describing what's ha
 
 **Unlike subtitle search (Frinkiac), this searches what's actually happening in the frames.**
 
+## Features
+
+- **Semantic Search**: Natural language visual search ("homer eating donuts")
+- **Character Detection**: Automatically tagged with character names
+- **AI Captions**: BLIP-generated descriptions
+- **Random Frame**: Discover random moments
+- **Filters**: Filter by season and character
+- **Manual Curation**: Admin delete for quality control (pre-release)
+- **90s Retro UI**: Classic Simpsons color scheme
+
 ## Example Queries
 
 - "Homer looking sad on the couch"
@@ -49,7 +59,18 @@ A local search engine that lets you find Simpsons scenes by describing what's ha
 
 ## Quick Start
 
-### 1. Install Dependencies
+### Option 1: Docker (Recommended)
+
+```bash
+# Build and run
+docker-compose up --build
+
+# Visit http://localhost:8000
+```
+
+See [DOCKER.md](DOCKER.md) for more details.
+
+### Option 2: Local Development
 
 ```bash
 # Create virtual environment (recommended)
