@@ -365,7 +365,6 @@ def similar_frames(
 @app.post("/frame/delete")
 def delete_frame(
     path: str = Query(..., description="Path to the frame to delete"),
-    _admin: bool = Depends(verify_admin)
 ):
     """
     Delete a frame from the index.

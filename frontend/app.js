@@ -9,6 +9,8 @@ let charactersExpanded = false;
 const INITIAL_CHARS_SHOWN = 8;
 let episodeNames = {};
 let hasSearched = false;
+const MAX_RESULTS = 100;
+const MIN_SCORE_THRESHOLD = 0.20;
 
 function setSearchedState(searched) {
     hasSearched = searched;
@@ -210,7 +212,7 @@ async function search() {
     searchBtn.disabled = true;
 
     try {
-        let url = `/search?q=${encodeURIComponent(query)}&limit=24`;
+        let url = `/search?q=${encodeURIComponent(query)}&limit=${MAX_RESULTS}`;
 
         // Add season filter
         if (activeFilters.season.size > 0) {
@@ -224,7 +226,10 @@ async function search() {
             throw new Error(`Search failed: ${response.statusText}`);
         }
 
-        const results = await response.json();
+        let results = await response.json();
+
+        // Filter by score threshold - stop showing results below threshold
+        results = results.filter(r => r.score >= MIN_SCORE_THRESHOLD);
 
         // Switch to searched state
         setSearchedState(true);
@@ -245,7 +250,7 @@ async function search() {
             const episodeTitle = getEpisodeTitle(r.episode);
             const episodeCode = r.episode.match(/s\d+e\d+/i)?.[0]?.toUpperCase() || r.episode;
             return `
-                <div class="result" data-path="${r.path}" onclick="openModal('${r.image_url}')">
+                <div class="result" data-path="${r.path}" onclick="openModal('${r.image_url}', '${r.episode}', ${r.timestamp}, '${r.path}', '${r.frame}')">
                     <input type="checkbox" class="frame-checkbox" onclick="event.stopPropagation(); toggleFrameSelection('${r.path}')" data-path="${r.path}">
                     <button class="delete-btn" onclick="event.stopPropagation(); deleteFrame('${r.path}')" title="Delete frame">×</button>
                     <img src="${r.image_url}" alt="${r.episode}" loading="lazy">
@@ -263,12 +268,10 @@ async function search() {
                             </div>
                         ` : ''}
                         ${r.caption ? `<div class="caption">${r.caption}</div>` : ''}
-                        <div class="score-bar">
-                            <div class="score-fill" style="width: ${r.score * 100}%"></div>
-                        </div>
-                        <div class="result-actions">
-                            <span class="score-text">${(r.score * 100).toFixed(1)}% match</span>
-                            <button class="similar-btn" onclick="event.stopPropagation(); findSimilar('${r.path}')" title="Find similar frames">Similar</button>
+                        <div class="result-buttons">
+                            <button class="action-btn" onclick="event.stopPropagation(); copyImageUrl('${r.image_url}', this)" title="Copy image URL">Copy</button>
+                            <button class="action-btn" onclick="event.stopPropagation(); downloadImage('${r.image_url}', '${r.episode}_${r.frame}')" title="Download image">Download</button>
+                            <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${r.path}')" title="Find similar frames">Similar</button>
                         </div>
                     </div>
                 </div>
@@ -306,7 +309,7 @@ async function randomFrame() {
         setSearchedState(true);
 
         resultsDiv.innerHTML = `
-            <div class="result" data-path="${result.path}" onclick="openModal('${result.image_url}')">
+            <div class="result" data-path="${result.path}" onclick="openModal('${result.image_url}', '${result.episode}', ${result.timestamp}, '${result.path}', '${result.frame}')">
                 <input type="checkbox" class="frame-checkbox" onclick="event.stopPropagation(); toggleFrameSelection('${result.path}')" data-path="${result.path}">
                 <button class="delete-btn" onclick="event.stopPropagation(); deleteFrame('${result.path}')" title="Delete frame">×</button>
                 <img src="${result.image_url}" alt="${result.episode}" loading="lazy">
@@ -324,8 +327,10 @@ async function randomFrame() {
                         </div>
                     ` : ''}
                     ${result.caption ? `<div class="caption">${result.caption}</div>` : ''}
-                    <div class="result-actions">
-                        <button class="similar-btn" onclick="event.stopPropagation(); findSimilar('${result.path}')" title="Find similar frames">Find Similar</button>
+                    <div class="result-buttons">
+                        <button class="action-btn" onclick="event.stopPropagation(); copyImageUrl('${result.image_url}', this)" title="Copy image URL">Copy</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); downloadImage('${result.image_url}', '${result.episode}_${result.frame}')" title="Download image">Download</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${result.path}')" title="Find similar frames">Similar</button>
                     </div>
                 </div>
             </div>
@@ -376,7 +381,7 @@ async function findSimilar(path) {
             const episodeTitle = getEpisodeTitle(r.episode);
             const episodeCode = r.episode.match(/s\d+e\d+/i)?.[0]?.toUpperCase() || r.episode;
             return `
-                <div class="result" data-path="${r.path}" onclick="openModal('${r.image_url}')">
+                <div class="result" data-path="${r.path}" onclick="openModal('${r.image_url}', '${r.episode}', ${r.timestamp}, '${r.path}', '${r.frame}')">
                     <input type="checkbox" class="frame-checkbox" onclick="event.stopPropagation(); toggleFrameSelection('${r.path}')" data-path="${r.path}">
                     <button class="delete-btn" onclick="event.stopPropagation(); deleteFrame('${r.path}')" title="Delete frame">×</button>
                     <img src="${r.image_url}" alt="${r.episode}" loading="lazy">
@@ -394,12 +399,10 @@ async function findSimilar(path) {
                             </div>
                         ` : ''}
                         ${r.caption ? `<div class="caption">${r.caption}</div>` : ''}
-                        <div class="score-bar">
-                            <div class="score-fill" style="width: ${r.score * 100}%"></div>
-                        </div>
-                        <div class="result-actions">
-                            <span class="score-text">${(r.score * 100).toFixed(1)}% similar</span>
-                            <button class="similar-btn" onclick="event.stopPropagation(); findSimilar('${r.path}')" title="Find similar frames">Similar</button>
+                        <div class="result-buttons">
+                            <button class="action-btn" onclick="event.stopPropagation(); copyImageUrl('${r.image_url}', this)" title="Copy image URL">Copy</button>
+                            <button class="action-btn" onclick="event.stopPropagation(); downloadImage('${r.image_url}', '${r.episode}_${r.frame}')" title="Download image">Download</button>
+                            <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${r.path}')" title="Find similar frames">Similar</button>
                         </div>
                     </div>
                 </div>
@@ -440,8 +443,58 @@ function formatTime(seconds) {
     return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function openModal(imageUrl) {
+async function copyImageUrl(imageUrl, button) {
+    const fullUrl = window.location.origin + imageUrl;
+    try {
+        await navigator.clipboard.writeText(fullUrl);
+        const originalText = button.textContent;
+        button.textContent = 'Copied!';
+        button.classList.add('copied');
+        setTimeout(() => {
+            button.textContent = originalText;
+            button.classList.remove('copied');
+        }, 1500);
+    } catch (err) {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy URL');
+    }
+}
+
+async function downloadImage(imageUrl, filename) {
+    try {
+        const response = await fetch(imageUrl);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename + '.jpg';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    } catch (err) {
+        console.error('Failed to download:', err);
+        // Fallback: open in new tab
+        window.open(imageUrl, '_blank');
+    }
+}
+
+function openModal(imageUrl, episode, timestamp, path, frame) {
     document.getElementById('modalImage').src = imageUrl;
+
+    // Set episode and time info
+    const episodeCode = episode ? episode.match(/s\d+e\d+/i)?.[0]?.toUpperCase() || episode : '';
+    document.getElementById('modalEpisode').textContent = episodeCode;
+    document.getElementById('modalTime').textContent = timestamp ? formatTime(timestamp) : '';
+
+    // Set buttons
+    const filename = episode && frame ? `${episode}_${frame}` : 'frame';
+    document.getElementById('modalButtons').innerHTML = `
+        <button class="modal-btn" onclick="copyImageUrl('${imageUrl}', this)">Copy URL</button>
+        <button class="modal-btn" onclick="downloadImage('${imageUrl}', '${filename}')">Download</button>
+        ${path ? `<button class="modal-btn" onclick="closeModal(); findSimilar('${path}')">Find Similar</button>` : ''}
+    `;
+
     document.getElementById('modal').classList.add('active');
 }
 
