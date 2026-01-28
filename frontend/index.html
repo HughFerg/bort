@@ -3,28 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bort Search - Simpsons Scene Search</title>
+    <title>BORT - Simpsons Scene Search</title>
     <meta name="description" content="Search The Simpsons scenes by character, action, or description. Find the perfect frame from thousands of indexed scenes.">
     <meta name="keywords" content="Simpsons, search, scenes, frames, Homer, Bart, Lisa, Marge, Springfield">
 
     <!-- Open Graph / Social -->
     <meta property="og:type" content="website">
-    <meta property="og:title" content="Bort Search - Simpsons Scene Search">
+    <meta property="og:title" content="BORT - Simpsons Scene Search">
     <meta property="og:description" content="Search The Simpsons scenes by character, action, or description. Find the perfect frame instantly.">
-    <meta property="og:site_name" content="Bort Search">
+    <meta property="og:site_name" content="BORT">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Bort Search - Simpsons Scene Search">
+    <meta name="twitter:title" content="BORT - Simpsons Scene Search">
     <meta name="twitter:description" content="Search The Simpsons scenes by character, action, or description.">
 
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23FFB6D9'/><circle cx='50' cy='50' r='20' fill='%23FFF'/><ellipse cx='45' cy='40' rx='8' ry='6' fill='%23FF69B4' opacity='0.6'/><ellipse cx='60' cy='45' rx='6' ry='5' fill='%23FF69B4' opacity='0.6'/><ellipse cx='50' cy='55' rx='7' ry='5' fill='%23FF69B4' opacity='0.6'/></svg>">
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v=9">
 </head>
 <body>
     <header onclick="resetToLanding()" title="Click to return to home">
-        <h1>BORT SEARCH</h1>
-        <p class="subtitle" id="subtitle">Search frames by character, scene, or action</p>
+        <h1>BORT</h1>
+        <p class="subtitle" id="subtitle">simpsons scene search</p>
     </header>
 
     <div class="search-container">
@@ -32,14 +32,14 @@
             <input
                 type="text"
                 id="query"
-                placeholder="Search by character, scene, or action..."
+                placeholder="homer eating donuts, bart skateboarding..."
                 onkeydown="if(event.key==='Enter') search()"
                 autofocus
             >
-            <button onclick="search()" id="searchBtn">Search</button>
+            <button onclick="search()" id="searchBtn">Go!</button>
         </div>
         <div class="button-row">
-            <button class="random-btn" onclick="randomFrame()">Random Frame</button>
+            <button class="random-btn" onclick="randomFrame()">surprise me</button>
         </div>
 
         <div class="filters">
@@ -52,22 +52,15 @@
                 </div>
             </div>
 
-            <div class="filter-group">
-                <div class="filter-label">Character:</div>
-                <div class="filter-pills" id="characterFilters">
-                    <!-- Character filters will be added dynamically -->
-                </div>
-            </div>
-
             <div id="activeFiltersContainer"></div>
         </div>
 
         <div class="examples">
-            <button class="example-btn" onclick="searchExample('homer looking sad on the couch')">Homer on couch</button>
-            <button class="example-btn" onclick="searchExample('bart writing on chalkboard')">Bart chalkboard</button>
-            <button class="example-btn" onclick="searchExample('burns saying excellent')">Mr. Burns</button>
-            <button class="example-btn" onclick="searchExample('lisa playing saxophone')">Lisa saxophone</button>
-            <button class="example-btn" onclick="searchExample('marge with blue hair')">Marge</button>
+            <button class="example-btn" onclick="searchExample('homer eating donuts')">🍩 donuts</button>
+            <button class="example-btn" onclick="searchExample('bart skateboard')">🛹 skateboard</button>
+            <button class="example-btn" onclick="searchExample('mr burns excellent')">😈 excellent</button>
+            <button class="example-btn" onclick="searchExample('moe tavern bar')">🍺 moe's</button>
+            <button class="example-btn" onclick="searchExample('couch gag')">🛋️ couch</button>
         </div>
     </div>
 
@@ -84,14 +77,16 @@
                     <span class="modal-episode" id="modalEpisode"></span>
                     <span class="modal-time" id="modalTime"></span>
                 </div>
+                <div class="modal-path" id="modalPath"></div>
                 <div class="modal-buttons" id="modalButtons"></div>
             </div>
         </div>
     </div>
 
     <div class="bulk-actions" id="bulkActions">
-        <span id="bulkCount">0 selected</span>
-        <button class="bulk-delete-btn" onclick="bulkDelete()">Delete Selected</button>
+        <button class="select-toggle-btn" id="selectToggle" onclick="toggleSelectMode()">Select</button>
+        <span id="bulkCount">Select frames</span>
+        <button class="bulk-delete-btn" onclick="bulkDelete()">Delete</button>
         <button class="bulk-clear-btn" onclick="clearSelection()">Clear</button>
     </div>
 
@@ -108,6 +103,6 @@
         </p>
     </footer>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=9"></script>
 </body>
 </html>

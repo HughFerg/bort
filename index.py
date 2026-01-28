@@ -223,6 +223,17 @@ def index_frames(
     frames_path = Path(frames_dir)
     episode_dirs = sorted([d for d in frames_path.iterdir() if d.is_dir()])
 
+    # Get existing frames (by path) to prevent duplicates
+    existing_paths = set()
+    if "frames" in db.table_names():
+        table = db.open_table("frames")
+        count = table.count_rows()
+        if count > 0:
+            dummy_vector = [0.0] * 512
+            all_frames = table.search(dummy_vector).limit(count).to_list()
+            existing_paths = set(r["path"] for r in all_frames)
+            print(f"Found {len(existing_paths)} existing frames in database")
+
     total_frames = 0
     first_episode = True
 
@@ -249,7 +260,13 @@ def index_frames(
         records = []
         skipped_intro = 0
         skipped_credits = 0
+        skipped_existing = 0
         for frame_path in tqdm(frame_paths, desc=f"  {episode_id}", leave=False):
+            # Skip if frame already exists in database
+            if str(frame_path) in existing_paths:
+                skipped_existing += 1
+                continue
+
             frame_num = int(frame_path.stem.split("_")[1])
             timestamp_sec = frame_num * frame_interval
 
@@ -300,8 +317,8 @@ def index_frames(
 
             total_frames += len(records)
             print(f"  ✓ {episode_id} indexed ({total_frames} total frames so far)")
-            if skipped_intro or skipped_credits:
-                print(f"    (Skipped {skipped_intro} intro + {skipped_credits} credits frames)")
+            if skipped_intro or skipped_credits or skipped_existing:
+                print(f"    (Skipped {skipped_intro} intro + {skipped_credits} credits + {skipped_existing} existing frames)")
 
     if total_frames > 0:
         print(f"\n✓ Indexing complete: {total_frames} frames across {len(episode_dirs)} episodes")

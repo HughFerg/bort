@@ -1,16 +1,35 @@
 let currentQuery = '';
 let selectedFrames = new Set();
+let selectMode = false;
+
+// Escape strings for use in onclick attributes
+function escapeAttr(str) {
+    return str ? str.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
+}
 let activeFilters = {
-    season: new Set(),
-    character: new Set()
+    season: new Set()
 };
-let allCharacters = [];
-let charactersExpanded = false;
-const INITIAL_CHARS_SHOWN = 8;
 let episodeNames = {};
 let hasSearched = false;
 const MAX_RESULTS = 100;
-const MIN_SCORE_THRESHOLD = 0.20;
+const MIN_SCORE_THRESHOLD = 0.05;
+const MAX_HISTORY = 10;
+let searchMode = 'visual'; // 'visual' or 'quote'
+let searchHistory = [];
+
+function setSearchMode(mode) {
+    searchMode = mode;
+    document.getElementById('modeVisual').classList.toggle('active', mode === 'visual');
+    document.getElementById('modeQuote').classList.toggle('active', mode === 'quote');
+
+    // Update placeholder based on mode
+    const input = document.getElementById('query');
+    if (mode === 'quote') {
+        input.placeholder = 'Search by quote or dialogue...';
+    } else {
+        input.placeholder = 'Search by scene or action...';
+    }
+}
 
 function setSearchedState(searched) {
     hasSearched = searched;
@@ -49,7 +68,7 @@ async function loadStats() {
         document.getElementById('stats').innerHTML =
             `${stats.total_frames.toLocaleString()} frames from ${stats.episodes} episode${stats.episodes > 1 ? 's' : ''}`;
         document.getElementById('subtitle').innerHTML =
-            `Search ${stats.total_frames.toLocaleString()} frames by character, scene, or action`;
+            `Search ${stats.total_frames.toLocaleString()} frames by scene or action`;
 
         // Load indexed seasons
         if (stats.seasons) {
@@ -76,54 +95,6 @@ function renderSeasonFilters() {
     }).join('');
 }
 
-async function loadCharacters() {
-    try {
-        const response = await fetch('/characters');
-        const data = await response.json();
-        allCharacters = data.characters;
-        renderCharacterFilters();
-    } catch (err) {
-        console.error('Failed to load characters:', err);
-    }
-}
-
-function renderCharacterFilters() {
-    const container = document.getElementById('characterFilters');
-    if (!allCharacters.length) {
-        container.innerHTML = '<span style="color: #999; font-size: 11px;">No characters found</span>';
-        return;
-    }
-
-    const visibleChars = charactersExpanded ? allCharacters : allCharacters.slice(0, INITIAL_CHARS_SHOWN);
-    const hiddenCount = allCharacters.length - INITIAL_CHARS_SHOWN;
-
-    let html = visibleChars.map(c => {
-        const isActive = activeFilters.character.has(c.name);
-        return `<button class="filter-pill ${isActive ? 'active' : ''}"
-            data-character="${c.name}"
-            onclick="toggleFilter('character', '${c.name}')">
-            ${c.name}<span class="character-count">(${c.count})</span>
-        </button>`;
-    }).join('');
-
-    if (hiddenCount > 0 && !charactersExpanded) {
-        html += `<button class="expand-btn" onclick="expandCharacters()">+${hiddenCount} more</button>`;
-    } else if (charactersExpanded && allCharacters.length > INITIAL_CHARS_SHOWN) {
-        html += `<button class="expand-btn" onclick="collapseCharacters()">Show less</button>`;
-    }
-
-    container.innerHTML = html;
-}
-
-function expandCharacters() {
-    charactersExpanded = true;
-    renderCharacterFilters();
-}
-
-function collapseCharacters() {
-    charactersExpanded = false;
-    renderCharacterFilters();
-}
 
 function toggleFilter(type, value) {
     if (activeFilters[type].has(value)) {
@@ -143,16 +114,10 @@ function updateFilterUI() {
         renderSeasonFilters();
     }
 
-    // Re-render character filters to update active states
-    if (allCharacters.length > 0) {
-        renderCharacterFilters();
-    }
-
     // Update active filters display
     const container = document.getElementById('activeFiltersContainer');
     const allFiltersArr = [
-        ...Array.from(activeFilters.season).map(s => ({ type: 'season', value: s, label: `Season ${s}` })),
-        ...Array.from(activeFilters.character).map(c => ({ type: 'character', value: c, label: c }))
+        ...Array.from(activeFilters.season).map(s => ({ type: 'season', value: s, label: `Season ${s}` }))
     ];
 
     if (allFiltersArr.length > 0) {
@@ -171,34 +136,12 @@ function updateFilterUI() {
     }
 }
 
-function addCharacterFilter(character) {
-    // Add character to filter pills if not already there
-    const filterPills = document.getElementById('characterFilters');
-    const existing = filterPills.querySelector(`[data-character="${character}"]`);
-    if (!existing) {
-        const pill = document.createElement('button');
-        pill.className = 'filter-pill';
-        pill.dataset.character = character;
-        pill.textContent = character;
-        pill.onclick = () => toggleFilter('character', character);
-        filterPills.appendChild(pill);
-    }
-    // Activate the filter
-    toggleFilter('character', character);
-}
-
 function buildSearchQuery() {
-    const query = document.getElementById('query').value.trim();
-    let fullQuery = query;
-
-    // Add character filters to query
-    if (activeFilters.character.size > 0) {
-        const chars = Array.from(activeFilters.character).join(', ');
-        fullQuery = fullQuery ? `${fullQuery} with ${chars}` : chars;
-    }
-
-    return fullQuery;
+    return document.getElementById('query').value.trim();
 }
+
+let currentResultsList = [];
+let currentModalIndex = -1;
 
 async function search() {
     const query = buildSearchQuery();
@@ -208,11 +151,21 @@ async function search() {
     const resultsDiv = document.getElementById('results');
     const searchBtn = document.getElementById('searchBtn');
 
-    resultsDiv.innerHTML = '<div class="loading">🔍 Searching...</div>';
+    // Save to history and update URL
+    saveToHistory(currentQuery);
+    updateURL(currentQuery);
+    hideHistoryDropdown();
+
+    resultsDiv.innerHTML = `<div class="loading">bort searching</div>`;
     searchBtn.disabled = true;
 
     try {
         let url = `/search?q=${encodeURIComponent(query)}&limit=${MAX_RESULTS}`;
+
+        // Add search mode
+        if (searchMode === 'quote') {
+            url += '&mode=quote';
+        }
 
         // Add season filter
         if (activeFilters.season.size > 0) {
@@ -235,43 +188,31 @@ async function search() {
         setSearchedState(true);
 
         if (results.length === 0) {
-            resultsDiv.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">🤷</div>
-                    <h2>D'oh! No results found</h2>
-                    <p>Try a different search term or adjust your filters</p>
-                </div>
-            `;
+            showEmptyState(resultsDiv);
             return;
         }
 
-        resultsDiv.innerHTML = results.map(r => {
-            const characters = r.characters ? r.characters.split(', ').filter(c => c.trim()) : [];
+        // Store for navigation
+        currentResultsList = results;
+
+        resultsDiv.innerHTML = results.map((r, index) => {
             const episodeTitle = getEpisodeTitle(r.episode);
             const episodeCode = r.episode.match(/s\d+e\d+/i)?.[0]?.toUpperCase() || r.episode;
+            const thumbUrl = r.thumb_url || r.image_url;  // Fallback to full-res if no thumbnail
             return `
-                <div class="result" data-path="${r.path}" onclick="openModal('${r.image_url}', '${r.episode}', ${r.timestamp}, '${r.path}', '${r.frame}')">
+                <div class="result${selectedFrames.has(r.path) ? ' selected' : ''}" data-path="${r.path}" onclick="handleFrameClick('${r.image_url}', '${escapeAttr(r.episode)}', ${r.timestamp}, '${escapeAttr(r.path)}', '${r.frame}', ${index}, event)">
                     <input type="checkbox" class="frame-checkbox" onclick="event.stopPropagation(); toggleFrameSelection('${r.path}')" data-path="${r.path}">
-                    <button class="delete-btn" onclick="event.stopPropagation(); deleteFrame('${r.path}')" title="Delete frame">×</button>
-                    <img src="${r.image_url}" alt="${r.episode}" loading="lazy">
+                    <span class="delete-btn" role="button" onclick="event.stopPropagation(); deleteFrame('${escapeAttr(r.path)}')" title="Delete frame">×</span>
+                    <img src="${thumbUrl}" alt="${r.episode}" loading="lazy">
                     <div class="result-info">
                         <div class="result-meta">
-                            <span class="episode">${episodeCode}</span>
+                            <span class="episode">${episodeCode}${episodeTitle ? ` - ${episodeTitle}` : ''}</span>
                             <span class="time">${formatTime(r.timestamp)}</span>
                         </div>
-                        ${episodeTitle ? `<div class="episode-title">${episodeTitle}</div>` : ''}
-                        ${characters.length > 0 ? `
-                            <div class="characters">
-                                ${characters.map(c => `
-                                    <span class="character-tag" onclick="event.stopPropagation(); addCharacterFilter('${c}')">${c}</span>
-                                `).join('')}
-                            </div>
-                        ` : ''}
-                        ${r.caption ? `<div class="caption">${r.caption}</div>` : ''}
                         <div class="result-buttons">
                             <button class="action-btn" onclick="event.stopPropagation(); copyImageUrl('${r.image_url}', this)" title="Copy image URL">Copy</button>
                             <button class="action-btn" onclick="event.stopPropagation(); downloadImage('${r.image_url}', '${r.episode}_${r.frame}')" title="Download image">Download</button>
-                            <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${r.path}')" title="Find similar frames">Similar</button>
+                            <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${escapeAttr(r.path)}')" title="Find similar frames">Similar</button>
                         </div>
                     </div>
                 </div>
@@ -292,7 +233,7 @@ async function search() {
 
 async function randomFrame() {
     const resultsDiv = document.getElementById('results');
-    resultsDiv.innerHTML = '<div class="loading">🎲 Getting random frame...</div>';
+    resultsDiv.innerHTML = `<div class="loading">bort searching</div>`;
 
     try {
         const response = await fetch('/random');
@@ -301,36 +242,27 @@ async function randomFrame() {
         }
 
         const result = await response.json();
-        const characters = result.characters ? result.characters.split(', ').filter(c => c.trim()) : [];
         const episodeTitle = getEpisodeTitle(result.episode);
         const episodeCode = result.episode.match(/s\d+e\d+/i)?.[0]?.toUpperCase() || result.episode;
+        const thumbUrl = result.thumb_url || result.image_url;  // Fallback to full-res if no thumbnail
 
         // Switch to searched state
         setSearchedState(true);
 
         resultsDiv.innerHTML = `
-            <div class="result" data-path="${result.path}" onclick="openModal('${result.image_url}', '${result.episode}', ${result.timestamp}, '${result.path}', '${result.frame}')">
+            <div class="result" data-path="${result.path}" onclick="handleFrameClick('${result.image_url}', '${escapeAttr(result.episode)}', ${result.timestamp}, '${escapeAttr(result.path)}', '${result.frame}', -1, event)">
                 <input type="checkbox" class="frame-checkbox" onclick="event.stopPropagation(); toggleFrameSelection('${result.path}')" data-path="${result.path}">
                 <button class="delete-btn" onclick="event.stopPropagation(); deleteFrame('${result.path}')" title="Delete frame">×</button>
-                <img src="${result.image_url}" alt="${result.episode}" loading="lazy">
+                <img src="${thumbUrl}" alt="${result.episode}" loading="lazy">
                 <div class="result-info">
                     <div class="result-meta">
-                        <span class="episode">${episodeCode}</span>
+                        <span class="episode">${episodeCode}${episodeTitle ? ` - ${episodeTitle}` : ''}</span>
                         <span class="time">${formatTime(result.timestamp)}</span>
                     </div>
-                    ${episodeTitle ? `<div class="episode-title">${episodeTitle}</div>` : ''}
-                    ${characters.length > 0 ? `
-                        <div class="characters">
-                            ${characters.map(c => `
-                                <span class="character-tag" onclick="event.stopPropagation(); addCharacterFilter('${c}')">${c}</span>
-                            `).join('')}
-                        </div>
-                    ` : ''}
-                    ${result.caption ? `<div class="caption">${result.caption}</div>` : ''}
                     <div class="result-buttons">
                         <button class="action-btn" onclick="event.stopPropagation(); copyImageUrl('${result.image_url}', this)" title="Copy image URL">Copy</button>
                         <button class="action-btn" onclick="event.stopPropagation(); downloadImage('${result.image_url}', '${result.episode}_${result.frame}')" title="Download image">Download</button>
-                        <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${result.path}')" title="Find similar frames">Similar</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${escapeAttr(result.path)}')" title="Find similar frames">Similar</button>
                     </div>
                 </div>
             </div>
@@ -345,15 +277,22 @@ async function randomFrame() {
     }
 }
 
+let currentSimilarSource = null;  // Track source frame for similar search
+
 async function findSimilar(path) {
     const resultsDiv = document.getElementById('results');
-    resultsDiv.innerHTML = '<div class="loading">🔍 Finding similar frames...</div>';
+    resultsDiv.innerHTML = `<div class="loading">bort searching</div>`;
+
+    // Store source path for back navigation
+    currentSimilarSource = path;
 
     try {
+        console.log('Finding similar for path:', path);
         const response = await fetch(`/similar?path=${encodeURIComponent(path)}&limit=24`);
 
         if (!response.ok) {
-            throw new Error(`Search failed: ${response.statusText}`);
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `Search failed: ${response.statusText}`);
         }
 
         const results = await response.json();
@@ -371,38 +310,37 @@ async function findSimilar(path) {
             return;
         }
 
+        // Store for navigation
+        currentResultsList = results;
+
+        // Extract episode info from source path for display
+        const sourceMatch = path.match(/The Simpsons - (s\d+e\d+)/i);
+        const sourceEp = sourceMatch ? sourceMatch[1].toUpperCase() : '';
+        const sourceFrame = path.match(/frame_(\d+)/)?.[1] || '';
+
         resultsDiv.innerHTML = `
             <div class="similar-header">
-                <span>Similar frames</span>
-                <button class="clear-similar-btn" onclick="clearResults()">Clear</button>
+                <button class="back-btn" onclick="goBack()">← Back</button>
+                <span>Similar to ${sourceEp}${sourceFrame ? ` @ frame ${parseInt(sourceFrame)}` : ''}</span>
             </div>
-        ` + results.map(r => {
-            const characters = r.characters ? r.characters.split(', ').filter(c => c.trim()) : [];
+        ` + results.map((r, index) => {
             const episodeTitle = getEpisodeTitle(r.episode);
             const episodeCode = r.episode.match(/s\d+e\d+/i)?.[0]?.toUpperCase() || r.episode;
+            const thumbUrl = r.thumb_url || r.image_url;  // Fallback to full-res if no thumbnail
             return `
-                <div class="result" data-path="${r.path}" onclick="openModal('${r.image_url}', '${r.episode}', ${r.timestamp}, '${r.path}', '${r.frame}')">
+                <div class="result${selectedFrames.has(r.path) ? ' selected' : ''}" data-path="${r.path}" onclick="handleFrameClick('${r.image_url}', '${escapeAttr(r.episode)}', ${r.timestamp}, '${escapeAttr(r.path)}', '${r.frame}', ${index}, event)">
                     <input type="checkbox" class="frame-checkbox" onclick="event.stopPropagation(); toggleFrameSelection('${r.path}')" data-path="${r.path}">
-                    <button class="delete-btn" onclick="event.stopPropagation(); deleteFrame('${r.path}')" title="Delete frame">×</button>
-                    <img src="${r.image_url}" alt="${r.episode}" loading="lazy">
+                    <span class="delete-btn" role="button" onclick="event.stopPropagation(); deleteFrame('${escapeAttr(r.path)}')" title="Delete frame">×</span>
+                    <img src="${thumbUrl}" alt="${r.episode}" loading="lazy">
                     <div class="result-info">
                         <div class="result-meta">
-                            <span class="episode">${episodeCode}</span>
+                            <span class="episode">${episodeCode}${episodeTitle ? ` - ${episodeTitle}` : ''}</span>
                             <span class="time">${formatTime(r.timestamp)}</span>
                         </div>
-                        ${episodeTitle ? `<div class="episode-title">${episodeTitle}</div>` : ''}
-                        ${characters.length > 0 ? `
-                            <div class="characters">
-                                ${characters.map(c => `
-                                    <span class="character-tag" onclick="event.stopPropagation(); addCharacterFilter('${c}')">${c}</span>
-                                `).join('')}
-                            </div>
-                        ` : ''}
-                        ${r.caption ? `<div class="caption">${r.caption}</div>` : ''}
                         <div class="result-buttons">
                             <button class="action-btn" onclick="event.stopPropagation(); copyImageUrl('${r.image_url}', this)" title="Copy image URL">Copy</button>
                             <button class="action-btn" onclick="event.stopPropagation(); downloadImage('${r.image_url}', '${r.episode}_${r.frame}')" title="Download image">Download</button>
-                            <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${r.path}')" title="Find similar frames">Similar</button>
+                            <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${escapeAttr(r.path)}')" title="Find similar frames">Similar</button>
                         </div>
                     </div>
                 </div>
@@ -421,6 +359,53 @@ async function findSimilar(path) {
 
 function clearResults() {
     document.getElementById('results').innerHTML = '';
+}
+
+async function showEmptyState(container) {
+    const messages = [
+        { title: "D'oh! No results found", sub: "Try a different search term" },
+        { title: "Nothing here", sub: "Try searching for something else" },
+        { title: "Ay caramba! Zero results", sub: "Maybe try different words?" },
+        { title: "No frames found", sub: "Try a broader search" }
+    ];
+    const msg = messages[Math.floor(Math.random() * messages.length)];
+
+    // Try to get a random reaction frame
+    const reactionSearches = ['sad', 'confused', 'surprised', 'disappointed', 'shocked', 'crying'];
+    const randomSearch = reactionSearches[Math.floor(Math.random() * reactionSearches.length)];
+
+    let reactionImg = '';
+    try {
+        const response = await fetch(`/search?q=${randomSearch}&limit=10`);
+        if (response.ok) {
+            const results = await response.json();
+            if (results.length > 0) {
+                const randomResult = results[Math.floor(Math.random() * results.length)];
+                reactionImg = `<img src="${randomResult.thumb_url}" alt="reaction" class="reaction-img">`;
+            }
+        }
+    } catch (e) {
+        // Fallback to emoji if fetch fails
+    }
+
+    container.innerHTML = `
+        <div class="empty-state">
+            ${reactionImg || '<div class="empty-state-icon">🤷</div>'}
+            <h2>${msg.title}</h2>
+            <p>${msg.sub}</p>
+        </div>
+    `;
+}
+
+function goBack() {
+    // If there's a current query, re-run the search
+    if (currentQuery) {
+        search();
+    } else {
+        // Otherwise reset to landing
+        resetToLanding();
+    }
+    currentSimilarSource = null;
 }
 
 function resetToLanding() {
@@ -479,23 +464,49 @@ async function downloadImage(imageUrl, filename) {
     }
 }
 
-function openModal(imageUrl, episode, timestamp, path, frame) {
+function openModal(imageUrl, episode, timestamp, path, frame, index = -1) {
+    currentModalIndex = index;
     document.getElementById('modalImage').src = imageUrl;
+
+    // Preload adjacent images for instant navigation
+    if (index >= 0 && currentResultsList.length > 0) {
+        if (index > 0) {
+            new Image().src = currentResultsList[index - 1].image_url;
+        }
+        if (index < currentResultsList.length - 1) {
+            new Image().src = currentResultsList[index + 1].image_url;
+        }
+    }
 
     // Set episode and time info
     const episodeCode = episode ? episode.match(/s\d+e\d+/i)?.[0]?.toUpperCase() || episode : '';
     document.getElementById('modalEpisode').textContent = episodeCode;
     document.getElementById('modalTime').textContent = timestamp ? formatTime(timestamp) : '';
+    document.getElementById('modalPath').textContent = path || '';
 
-    // Set buttons
+    // Set buttons with prev/next navigation
     const filename = episode && frame ? `${episode}_${frame}` : 'frame';
+    const hasPrev = index > 0;
+    const hasNext = index >= 0 && index < currentResultsList.length - 1;
+
+    const escapedPath = path ? path.replace(/'/g, "\\'") : '';
     document.getElementById('modalButtons').innerHTML = `
+        ${hasPrev ? `<button class="modal-btn modal-nav" onclick="navigateModal(-1)">← Prev</button>` : ''}
         <button class="modal-btn" onclick="copyImageUrl('${imageUrl}', this)">Copy URL</button>
         <button class="modal-btn" onclick="downloadImage('${imageUrl}', '${filename}')">Download</button>
-        ${path ? `<button class="modal-btn" onclick="closeModal(); findSimilar('${path}')">Find Similar</button>` : ''}
+        ${path ? `<button class="modal-btn" onclick="closeModal(); findSimilar('${escapedPath}')">Similar</button>` : ''}
+        ${hasNext ? `<button class="modal-btn modal-nav" onclick="navigateModal(1)">Next →</button>` : ''}
     `;
 
     document.getElementById('modal').classList.add('active');
+}
+
+function navigateModal(direction) {
+    const newIndex = currentModalIndex + direction;
+    if (newIndex >= 0 && newIndex < currentResultsList.length) {
+        const r = currentResultsList[newIndex];
+        openModal(r.image_url, r.episode, r.timestamp, r.path, r.frame, newIndex);
+    }
 }
 
 function closeModal() {
@@ -503,9 +514,24 @@ function closeModal() {
 }
 
 document.addEventListener('keydown', (e) => {
+    const modalActive = document.getElementById('modal').classList.contains('active');
+
     if (e.key === 'Escape') {
         closeModal();
+        hideHistoryDropdown();
     }
+
+    // Arrow keys for modal navigation
+    if (modalActive && currentModalIndex >= 0) {
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            navigateModal(-1);
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            navigateModal(1);
+        }
+    }
+
     // Press "/" to focus search (like GitHub, YouTube, etc.)
     if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
         e.preventDefault();
@@ -513,7 +539,17 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-function toggleFrameSelection(path) {
+function toggleSelectMode() {
+    selectMode = !selectMode;
+    document.body.classList.toggle('select-mode', selectMode);
+    if (!selectMode) {
+        clearSelection();
+    }
+    updateBulkActions();
+}
+
+function toggleFrameSelection(path, event) {
+    if (event) event.stopPropagation();
     if (selectedFrames.has(path)) {
         selectedFrames.delete(path);
     } else {
@@ -522,21 +558,35 @@ function toggleFrameSelection(path) {
     updateBulkActions();
 }
 
+function handleFrameClick(imageUrl, episode, timestamp, path, frame, index, event) {
+    if (selectMode) {
+        toggleFrameSelection(path, event);
+    } else {
+        openModal(imageUrl, episode, timestamp, path, frame, index);
+    }
+}
+
 function updateBulkActions() {
     const bulkActions = document.getElementById('bulkActions');
     const bulkCount = document.getElementById('bulkCount');
+    const selectToggle = document.getElementById('selectToggle');
 
-    if (selectedFrames.size > 0) {
+    if (selectMode || selectedFrames.size > 0) {
         bulkActions.classList.add('visible');
-        bulkCount.textContent = `${selectedFrames.size} selected`;
+        bulkCount.textContent = selectedFrames.size > 0 ? `${selectedFrames.size} selected` : 'Select frames';
+        if (selectToggle) selectToggle.textContent = selectMode ? 'Done' : 'Select';
     } else {
         bulkActions.classList.remove('visible');
     }
 
-    // Update checkboxes to match selection state
+    // Update checkboxes and card selected state
     document.querySelectorAll('.frame-checkbox').forEach(checkbox => {
         const path = checkbox.dataset.path;
         checkbox.checked = selectedFrames.has(path);
+    });
+    document.querySelectorAll('.result').forEach(card => {
+        const path = card.dataset.path;
+        card.classList.toggle('selected', selectedFrames.has(path));
     });
 }
 
@@ -629,6 +679,104 @@ async function deleteFrame(path) {
 
 // Initialize on page load
 loadStats();
-loadCharacters();
 loadEpisodeNames();
 updateFilterUI();
+loadFromURL();
+loadSearchHistory();
+
+// Handle browser back/forward
+window.addEventListener('popstate', loadFromURL);
+
+function loadFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('q');
+    if (q) {
+        document.getElementById('query').value = q;
+        search();
+    }
+}
+
+function updateURL(query) {
+    const url = new URL(window.location);
+    if (query) {
+        url.searchParams.set('q', query);
+    } else {
+        url.searchParams.delete('q');
+    }
+    window.history.pushState({}, '', url);
+}
+
+// Search history
+function loadSearchHistory() {
+    try {
+        searchHistory = JSON.parse(localStorage.getItem('searchHistory') || '[]');
+    } catch (e) {
+        searchHistory = [];
+    }
+    renderSearchHistory();
+}
+
+function saveToHistory(query) {
+    if (!query.trim()) return;
+    // Remove if exists, add to front
+    searchHistory = searchHistory.filter(q => q !== query);
+    searchHistory.unshift(query);
+    searchHistory = searchHistory.slice(0, MAX_HISTORY);
+    localStorage.setItem('searchHistory', JSON.stringify(searchHistory));
+    renderSearchHistory();
+}
+
+function renderSearchHistory() {
+    let dropdown = document.getElementById('searchHistoryDropdown');
+    if (!dropdown) {
+        dropdown = document.createElement('div');
+        dropdown.id = 'searchHistoryDropdown';
+        dropdown.className = 'search-history-dropdown';
+        document.querySelector('.search-box').appendChild(dropdown);
+    }
+
+    if (searchHistory.length === 0) {
+        dropdown.innerHTML = '';
+        return;
+    }
+
+    dropdown.innerHTML = searchHistory.map(q =>
+        `<div class="history-item" onclick="selectHistory('${q.replace(/'/g, "\\'")}')">${q}</div>`
+    ).join('');
+}
+
+function selectHistory(query) {
+    document.getElementById('query').value = query;
+    hideHistoryDropdown();
+    search();
+}
+
+function showHistoryDropdown() {
+    const dropdown = document.getElementById('searchHistoryDropdown');
+    if (dropdown && searchHistory.length > 0) {
+        dropdown.classList.add('visible');
+    }
+}
+
+function hideHistoryDropdown() {
+    const dropdown = document.getElementById('searchHistoryDropdown');
+    if (dropdown) {
+        dropdown.classList.remove('visible');
+    }
+}
+
+// Setup search input focus/blur for history dropdown
+document.addEventListener('DOMContentLoaded', () => {
+    const queryInput = document.getElementById('query');
+
+    queryInput.addEventListener('focus', () => {
+        showHistoryDropdown();
+    });
+
+    queryInput.addEventListener('blur', (e) => {
+        // Delay hide to allow click on history item
+        setTimeout(() => {
+            hideHistoryDropdown();
+        }, 150);
+    });
+});

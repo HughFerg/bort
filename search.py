@@ -8,6 +8,8 @@ using CLIP embeddings and vector similarity search.
 
 import os
 import secrets
+import time
+from datetime import datetime
 from pathlib import Path
 
 import lancedb
@@ -28,6 +30,26 @@ limiter = Limiter(key_func=get_remote_address)
 # Admin authentication
 security = HTTPBasic()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+# External CDN for images (if hosting frames on R2/S3)
+# If set, images are served from CDN instead of locally
+IMAGE_CDN_URL = os.environ.get("IMAGE_CDN_URL", "").rstrip("/")
+
+
+def get_image_urls(episode: str, frame: str) -> dict:
+    """Generate image URLs, using CDN if configured."""
+    if IMAGE_CDN_URL:
+        # CDN structure: {CDN_URL}/frames/{episode}/{frame}
+        return {
+            "thumb_url": f"{IMAGE_CDN_URL}/thumbnails/{episode}/{frame.rsplit('.', 1)[0]}_thumb.webp",
+            "image_url": f"{IMAGE_CDN_URL}/frames/{episode}/{frame}"
+        }
+    else:
+        # Local paths
+        return {
+            "thumb_url": f"/thumbs/{episode}/{frame}",
+            "image_url": f"/frames/{episode}/{frame}"
+        }
 
 
 def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
@@ -89,6 +111,55 @@ table = db.open_table("frames")
 
 print("✓ Ready to search!")
 
+# Stats cache with TTL
+_stats_cache = {"data": None, "timestamp": 0}
+STATS_CACHE_TTL = 600  # 10 minutes
+
+
+def _compute_stats():
+    """Compute database statistics."""
+    import re
+    count = table.count_rows()
+    dummy_vector = [0.0] * 512
+    all_frames = table.search(dummy_vector).limit(count).to_list()
+    episodes = set(r["episode"] for r in all_frames)
+    unique_episodes = len(episodes)
+
+    seasons = set()
+    for ep in episodes:
+        match = re.search(r's(\d+)e', ep, re.I)
+        if match:
+            seasons.add(int(match.group(1)))
+
+    return {
+        "total_frames": count,
+        "episodes": unique_episodes,
+        "frames_per_episode_avg": count / unique_episodes if unique_episodes > 0 else 0,
+        "seasons": sorted(seasons)
+    }
+
+
+# Precompute stats on startup
+print("Precomputing stats...")
+_stats_cache["data"] = _compute_stats()
+_stats_cache["timestamp"] = time.time()
+print(f"✓ Stats ready: {_stats_cache['data']['total_frames']} frames")
+
+# Search logging
+SEARCH_LOG_PATH = Path("data/search_log.tsv")
+
+
+def log_search(query: str, mode: str, results_count: int, ip: str = ""):
+    """Append search query to log file."""
+    try:
+        timestamp = datetime.now().isoformat()
+        # TSV format: timestamp, query, mode, results_count, ip
+        line = f"{timestamp}\t{query}\t{mode}\t{results_count}\t{ip}\n"
+        with open(SEARCH_LOG_PATH, "a") as f:
+            f.write(line)
+    except Exception:
+        pass  # Don't let logging errors break searches
+
 
 def embed_text(query: str) -> list[float]:
     """Generate CLIP embedding for text query."""
@@ -141,7 +212,9 @@ def legal():
 def search(
     request: Request,
     q: str = Query(..., description="Natural language search query"),
-    limit: int = Query(20, ge=1, le=100, description="Number of results to return")
+    limit: int = Query(20, ge=1, le=100, description="Number of results to return"),
+    mode: str = Query("visual", description="Search mode: 'visual' or 'quote'"),
+    season: str = Query(None, description="Comma-separated season codes to filter (e.g., 's01,s02')")
 ):
     """
     Search for frames matching the query.
@@ -149,6 +222,8 @@ def search(
     Args:
         q: Natural language description (e.g., "homer eating donuts")
         limit: Maximum number of results (1-100)
+        mode: Search mode - 'visual' uses CLIP embeddings, 'quote' prioritizes caption matches
+        season: Optional comma-separated season codes to filter results
 
     Returns:
         List of matching frames with metadata and similarity scores
@@ -156,46 +231,104 @@ def search(
     if not q.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
-    try:
-        query_embedding = embed_text(q)
-        # Get more results for re-ranking
-        results = table.search(query_embedding).limit(limit * 3).to_list()
+    # Parse season filter
+    season_filters = set()
+    if season:
+        season_filters = set(s.strip().lower() for s in season.split(','))
 
-        # Hybrid search: boost results where caption or characters match query terms
+    try:
         query_lower = q.lower()
         query_words = set(query_lower.split())
 
-        for r in results:
-            caption = r.get("caption", "").lower()
-            characters = r.get("characters", "").lower()
+        if mode == "quote":
+            # Quote mode: use CLIP embedding but with heavy caption boosting
+            query_embedding = embed_text(q)
+            results = table.search(query_embedding).limit(limit * 10).to_list()
 
-            # Boost score if caption contains query words
-            caption_matches = sum(1 for word in query_words if word in caption)
-            if caption_matches > 0:
-                # Clamp multiplier to minimum 0.1 to avoid negative distances
-                multiplier = max(0.1, 1 - 0.15 * caption_matches)
-                r["_distance"] = r["_distance"] * multiplier
+            # Filter by season if specified
+            if season_filters:
+                results = [r for r in results if any(sf in r["episode"].lower() for sf in season_filters)]
 
-            # Strong boost if character name matches query
-            character_matches = sum(1 for word in query_words if word in characters)
-            if character_matches > 0:
-                # Clamp multiplier to minimum 0.1 to avoid negative distances
-                multiplier = max(0.1, 1 - 0.3 * character_matches)
-                r["_distance"] = r["_distance"] * multiplier
+            # Score by caption match with heavy boosting
+            scored_results = []
+            for r in results:
+                caption = r.get("caption", "").lower()
+                base_score = max(0.0, 1 - r["_distance"] / 2)
 
-        # Re-sort by adjusted distance and take top results
-        results = sorted(results, key=lambda x: x["_distance"])[:limit]
+                # Count word matches and check for phrase match
+                word_matches = sum(1 for word in query_words if word in caption)
+                phrase_match = query_lower in caption
 
-        return [{
-            "episode": r["episode"],
-            "frame": r["frame"],
-            "path": r["path"],
-            "timestamp": r["timestamp"],
-            "caption": r.get("caption", ""),
-            "characters": r.get("characters", ""),
-            "score": max(0.0, min(1.0, 1 - r["_distance"])),  # Clamp score to [0, 1]
-            "image_url": f"/frames/{r['episode']}/{r['frame']}"
-        } for r in results]
+                # Heavy boost for caption matches in quote mode
+                if phrase_match:
+                    score = 0.95
+                elif word_matches > 0:
+                    score = min(0.9, base_score + (word_matches * 0.2))
+                else:
+                    score = base_score * 0.3  # Penalize non-matches heavily
+
+                scored_results.append({**r, "_score": score})
+
+            # Sort by score descending
+            scored_results.sort(key=lambda x: x["_score"], reverse=True)
+            results = scored_results[:limit]
+
+            # Log the search
+            log_search(q, mode, len(results), request.client.host if request.client else "")
+
+            return [{
+                "episode": r["episode"],
+                "frame": r["frame"],
+                "path": r["path"],
+                "timestamp": r["timestamp"],
+                "score": r["_score"],
+                **get_image_urls(r["episode"], r["frame"])
+            } for r in results]
+
+        else:
+            # Visual mode: use CLIP embeddings with hybrid boosting
+            query_embedding = embed_text(q)
+            # Get more results for re-ranking (more if filtering by season)
+            fetch_limit = limit * 10 if season_filters else limit * 3
+            results = table.search(query_embedding).limit(fetch_limit).to_list()
+
+            # Filter by season if specified
+            if season_filters:
+                results = [r for r in results if any(sf in r["episode"].lower() for sf in season_filters)]
+
+            # Hybrid search: boost results where caption or characters match query terms
+            for r in results:
+                caption = r.get("caption", "").lower()
+                characters = r.get("characters", "").lower()
+
+                # Boost score if caption contains query words
+                caption_matches = sum(1 for word in query_words if word in caption)
+                if caption_matches > 0:
+                    # Clamp multiplier to minimum 0.1 to avoid negative distances
+                    multiplier = max(0.1, 1 - 0.15 * caption_matches)
+                    r["_distance"] = r["_distance"] * multiplier
+
+                # Strong boost if character name matches query
+                character_matches = sum(1 for word in query_words if word in characters)
+                if character_matches > 0:
+                    # Clamp multiplier to minimum 0.1 to avoid negative distances
+                    multiplier = max(0.1, 1 - 0.3 * character_matches)
+                    r["_distance"] = r["_distance"] * multiplier
+
+            # Re-sort by adjusted distance and take top results
+            results = sorted(results, key=lambda x: x["_distance"])[:limit]
+
+            # Log the search
+            log_search(q, mode, len(results), request.client.host if request.client else "")
+
+            return [{
+                "episode": r["episode"],
+                "frame": r["frame"],
+                "path": r["path"],
+                "timestamp": r["timestamp"],
+                "score": max(0.0, min(1.0, 1 - r["_distance"] / 2)),  # Scale: distance 0=1.0, distance 2=0.0
+                **get_image_urls(r["episode"], r["frame"])
+            } for r in results]
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -203,69 +336,23 @@ def search(
 
 @app.get("/stats")
 @limiter.limit("30/minute")
-def stats(request: Request):
-    """Get database statistics."""
-    import re
+def stats(request: Request, refresh: bool = False):
+    """Get database statistics (cached, precomputed on startup)."""
+    global _stats_cache
+    now = time.time()
+
+    # Return cached data if valid and not forcing refresh
+    if not refresh and _stats_cache["data"] and (now - _stats_cache["timestamp"]) < STATS_CACHE_TTL:
+        return _stats_cache["data"]
+
     try:
-        count = table.count_rows()
-        # Get all episodes using a dummy search
-        dummy_vector = [0.0] * 512
-        all_frames = table.search(dummy_vector).limit(count).to_list()
-        episodes = set(r["episode"] for r in all_frames)
-        unique_episodes = len(episodes)
+        result = _compute_stats()
 
-        # Extract unique seasons from episode names
-        seasons = set()
-        for ep in episodes:
-            match = re.search(r's(\d+)e', ep, re.I)
-            if match:
-                seasons.add(int(match.group(1)))
+        # Update cache
+        _stats_cache["data"] = result
+        _stats_cache["timestamp"] = now
 
-        return {
-            "total_frames": count,
-            "episodes": unique_episodes,
-            "frames_per_episode_avg": count / unique_episodes if unique_episodes > 0 else 0,
-            "seasons": sorted(seasons)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/characters")
-@limiter.limit("30/minute")
-def get_characters(request: Request):
-    """Get all characters with their frame counts, sorted by popularity."""
-    try:
-        from collections import Counter
-
-        count = table.count_rows()
-        dummy_vector = [0.0] * 512
-        all_frames = table.search(dummy_vector).limit(count).to_list()
-
-        # Count character occurrences
-        character_counts = Counter()
-        for frame in all_frames:
-            chars = frame.get("characters", "")
-            if chars:
-                for char in chars.split(", "):
-                    char = char.strip()
-                    if char:
-                        character_counts[char] += 1
-
-        # Sort by count descending
-        sorted_characters = sorted(
-            character_counts.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
-
-        return {
-            "characters": [
-                {"name": name, "count": count}
-                for name, count in sorted_characters
-            ],
-            "total": len(sorted_characters)
-        }
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -299,9 +386,7 @@ def random_frame(request: Request):
             "frame": result["frame"],
             "path": result["path"],
             "timestamp": result["timestamp"],
-            "caption": result.get("caption", ""),
-            "characters": result.get("characters", ""),
-            "image_url": f"/frames/{result['episode']}/{result['frame']}"
+            **get_image_urls(result["episode"], result["frame"])
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -325,19 +410,13 @@ def similar_frames(
         List of similar frames with similarity scores
     """
     try:
-        # Find the source frame by path
-        count = table.count_rows()
-        dummy_vector = [0.0] * 512
-        all_frames = table.search(dummy_vector).limit(count).to_list()
+        # Find the source frame by path using filter
+        source_results = table.search().where(f"path = '{path}'", prefilter=True).limit(1).to_list()
 
-        source_frame = None
-        for frame in all_frames:
-            if frame["path"] == path:
-                source_frame = frame
-                break
+        if not source_results:
+            raise HTTPException(status_code=404, detail=f"Source frame not found: {path}")
 
-        if not source_frame:
-            raise HTTPException(status_code=404, detail="Source frame not found")
+        source_frame = source_results[0]
 
         # Search using the source frame's embedding
         results = table.search(source_frame["vector"]).limit(limit + 1).to_list()
@@ -350,10 +429,8 @@ def similar_frames(
             "frame": r["frame"],
             "path": r["path"],
             "timestamp": r["timestamp"],
-            "caption": r.get("caption", ""),
-            "characters": r.get("characters", ""),
-            "score": max(0.0, min(1.0, 1 - r["_distance"])),
-            "image_url": f"/frames/{r['episode']}/{r['frame']}"
+            "score": max(0.0, min(1.0, 1 - r["_distance"] / 2)),
+            **get_image_urls(r["episode"], r["frame"])
         } for r in results]
 
     except HTTPException:
@@ -391,8 +468,53 @@ def delete_frame(
         raise HTTPException(status_code=500, detail=f"Failed to delete frame: {str(e)}")
 
 
-if Path("data/frames").exists():
-    app.mount("/frames", StaticFiles(directory="data/frames"), name="frames")
+@app.get("/frames/{episode}/{frame}")
+def get_frame(episode: str, frame: str):
+    """Serve frame images with aggressive caching headers."""
+    frame_path = Path(f"data/frames/{episode}/{frame}")
+    if not frame_path.exists():
+        raise HTTPException(status_code=404, detail="Frame not found")
+
+    return FileResponse(
+        frame_path,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Vary": "Accept-Encoding"
+        }
+    )
+
+
+@app.get("/thumbs/{episode}/{frame}")
+def get_thumbnail(episode: str, frame: str):
+    """Serve thumbnail images with aggressive caching headers."""
+    # Convert frame.jpg to frame_thumb.webp
+    thumb_name = frame.rsplit('.', 1)[0] + "_thumb.webp"
+    thumb_path = Path(f"data/thumbnails/{episode}/{thumb_name}")
+
+    # Fall back to full-res if thumbnail doesn't exist
+    if not thumb_path.exists():
+        frame_path = Path(f"data/frames/{episode}/{frame}")
+        if not frame_path.exists():
+            raise HTTPException(status_code=404, detail="Frame not found")
+        return FileResponse(
+            frame_path,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "Vary": "Accept-Encoding"
+            }
+        )
+
+    return FileResponse(
+        thumb_path,
+        media_type="image/webp",
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Vary": "Accept-Encoding"
+        }
+    )
+
 
 if Path("frontend").exists():
     app.mount("/static", StaticFiles(directory="frontend"), name="static")
