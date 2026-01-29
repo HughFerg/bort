@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  prepare:
+    build: .
+    volumes:
+      - ./data:/app/data
+    command: python prepare_dataset.py --skip-download
+
+  train:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./runs:/app/runs
+    command: python train.py train --epochs 30 --model s --device cpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  train-cpu:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./runs:/app/runs
+    command: python train.py train --epochs 30 --model n --device cpu

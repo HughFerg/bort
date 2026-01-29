@@ -1,0 +1,4 @@
+- add episode name to frame caption
+- systematically detect and remove all black / white frames
+- clean up test files / files we dont need anymore in general
+- structure this to better prepare for deployment. if this isnt clear, work with me to create a dployment plan
