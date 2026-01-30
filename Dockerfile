@@ -12,10 +12,10 @@ RUN useradd --create-home --shell /bin/bash appuser
 WORKDIR /app
 
 # Copy requirements first (for caching)
-COPY requirements.txt .
+COPY requirements-prod.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install CPU-only Python dependencies (no CUDA/GPU)
+RUN pip install --no-cache-dir -r requirements-prod.txt
 
 # Copy application code
 COPY --chown=appuser:appuser . .
