@@ -13,8 +13,8 @@ from datetime import datetime
 from pathlib import Path
 
 import lancedb
-import open_clip
-import torch
+import onnxruntime as ort
+from clip_tokenizer import CLIPTokenizer
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -90,13 +90,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("Loading CLIP model...")
-model, _, preprocess = open_clip.create_model_and_transforms(
-    'ViT-B-32',
-    pretrained='laion2b_s34b_b79k'
+print("Loading CLIP text encoder (ONNX)...")
+_onnx_model_path = os.path.join(os.path.dirname(__file__), "models", "clip_text_encoder.onnx")
+if not Path(_onnx_model_path).exists():
+    raise RuntimeError(
+        f"ONNX model not found at {_onnx_model_path}. "
+        "Run 'python export_clip_onnx.py' first to export the model."
+    )
+onnx_session = ort.InferenceSession(
+    _onnx_model_path,
+    providers=["CPUExecutionProvider"],
 )
-tokenizer = open_clip.get_tokenizer('ViT-B-32')
-model.eval()
+tokenizer = CLIPTokenizer()
 
 print("Connecting to LanceDB...")
 db_path = "data/simpsons.lance"
@@ -163,11 +168,9 @@ def log_search(query: str, mode: str, results_count: int, ip: str = ""):
 
 def embed_text(query: str) -> list[float]:
     """Generate CLIP embedding for text query."""
-    text = tokenizer([query])
-    with torch.no_grad():
-        embedding = model.encode_text(text)
-        embedding /= embedding.norm(dim=-1, keepdim=True)
-    return embedding[0].tolist()
+    tokens = tokenizer([query])
+    embedding = onnx_session.run(None, {"input_ids": tokens})[0][0]
+    return embedding.tolist()
 
 
 @app.get("/")

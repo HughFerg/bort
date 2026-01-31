@@ -44,3 +44,7 @@ check_*.py
 detect_*.py
 find_*.py
 test_*.py
+export_clip_onnx.py
+
+# PyTorch model files (not needed - using ONNX)
+models/*.pt

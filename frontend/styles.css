@@ -232,6 +232,16 @@ body.searched .button-row {
     display: none;
 }
 
+.results-random {
+    display: none;
+    text-align: center;
+    margin: 30px 0;
+}
+
+body.searched .results-random {
+    display: block;
+}
+
 /* Examples */
 .examples {
     display: flex;

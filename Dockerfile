@@ -14,7 +14,7 @@ WORKDIR /app
 # Copy requirements first (for caching)
 COPY requirements-prod.txt .
 
-# Install CPU-only Python dependencies (no CUDA/GPU)
+# Install Python dependencies (ONNX Runtime for inference, no PyTorch)
 RUN pip install --no-cache-dir -r requirements-prod.txt
 
 # Copy application code

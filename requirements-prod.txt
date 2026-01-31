@@ -1,7 +1,5 @@
 # Production dependencies (search API only, CPU)
---extra-index-url https://download.pytorch.org/whl/cpu
-torch --index-url https://download.pytorch.org/whl/cpu
-open-clip-torch
+onnxruntime
 lancedb
 fastapi
 uvicorn[standard]
@@ -9,3 +7,5 @@ pillow
 pyarrow
 slowapi
 numpy
+ftfy
+regex
