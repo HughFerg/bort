@@ -18,7 +18,7 @@ REMOTE
 
 echo "=== Step 2: Copying app code ==="
 rsync -avz -e "ssh $SSH_OPTS" --exclude='data/' --exclude='venv/' --exclude='__pycache__/' \
-  --exclude='.git/' --exclude='training/' --exclude='models/' \
+  --exclude='.git/' --exclude='training/' --exclude='models/*.pt' \
   ./ $SERVER:$APP_DIR/
 
 echo "=== Step 3: Copying database ==="

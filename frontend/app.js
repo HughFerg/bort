@@ -201,8 +201,6 @@ async function search() {
             const thumbUrl = r.thumb_url || r.image_url;  // Fallback to full-res if no thumbnail
             return `
                 <div class="result${selectedFrames.has(r.path) ? ' selected' : ''}" data-path="${r.path}" onclick="handleFrameClick('${r.image_url}', '${escapeAttr(r.episode)}', ${r.timestamp}, '${escapeAttr(r.path)}', '${r.frame}', ${index}, event)">
-                    <input type="checkbox" class="frame-checkbox" onclick="event.stopPropagation(); toggleFrameSelection('${r.path}')" data-path="${r.path}">
-                    <span class="delete-btn" role="button" onclick="event.stopPropagation(); deleteFrame('${escapeAttr(r.path)}')" title="Delete frame">×</span>
                     <img src="${thumbUrl}" alt="${r.episode}" loading="lazy">
                     <div class="result-info">
                         <div class="result-meta">
@@ -251,8 +249,6 @@ async function randomFrame() {
 
         resultsDiv.innerHTML = `
             <div class="result" data-path="${result.path}" onclick="handleFrameClick('${result.image_url}', '${escapeAttr(result.episode)}', ${result.timestamp}, '${escapeAttr(result.path)}', '${result.frame}', -1, event)">
-                <input type="checkbox" class="frame-checkbox" onclick="event.stopPropagation(); toggleFrameSelection('${result.path}')" data-path="${result.path}">
-                <button class="delete-btn" onclick="event.stopPropagation(); deleteFrame('${result.path}')" title="Delete frame">×</button>
                 <img src="${thumbUrl}" alt="${result.episode}" loading="lazy">
                 <div class="result-info">
                     <div class="result-meta">
@@ -329,8 +325,6 @@ async function findSimilar(path) {
             const thumbUrl = r.thumb_url || r.image_url;  // Fallback to full-res if no thumbnail
             return `
                 <div class="result${selectedFrames.has(r.path) ? ' selected' : ''}" data-path="${r.path}" onclick="handleFrameClick('${r.image_url}', '${escapeAttr(r.episode)}', ${r.timestamp}, '${escapeAttr(r.path)}', '${r.frame}', ${index}, event)">
-                    <input type="checkbox" class="frame-checkbox" onclick="event.stopPropagation(); toggleFrameSelection('${r.path}')" data-path="${r.path}">
-                    <span class="delete-btn" role="button" onclick="event.stopPropagation(); deleteFrame('${escapeAttr(r.path)}')" title="Delete frame">×</span>
                     <img src="${thumbUrl}" alt="${r.episode}" loading="lazy">
                     <div class="result-info">
                         <div class="result-meta">

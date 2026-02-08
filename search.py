@@ -17,7 +17,7 @@ import onnxruntime as ort
 from clip_tokenizer import CLIPTokenizer
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -125,10 +125,7 @@ def _compute_stats():
     """Compute database statistics."""
     import re
     count = table.count_rows()
-    dummy_vector = [0.0] * 512
-    all_frames = table.search(dummy_vector).limit(count).to_list()
-    episodes = set(r["episode"] for r in all_frames)
-    unique_episodes = len(episodes)
+    episodes = set(table.to_arrow().select(["episode"]).column("episode").to_pylist())
 
     seasons = set()
     for ep in episodes:
@@ -136,6 +133,7 @@ def _compute_stats():
         if match:
             seasons.add(int(match.group(1)))
 
+    unique_episodes = len(episodes)
     return {
         "total_frames": count,
         "episodes": unique_episodes,
@@ -178,11 +176,6 @@ def root():
     """Serve the frontend."""
     return FileResponse("frontend/index.html")
 
-
-@app.get("/test-delete")
-def test_delete():
-    """Serve the delete test page."""
-    return FileResponse("test_delete.html")
 
 
 @app.get("/legal")
@@ -445,6 +438,7 @@ def similar_frames(
 @app.post("/frame/delete")
 def delete_frame(
     path: str = Query(..., description="Path to the frame to delete"),
+    admin: bool = Depends(verify_admin),
 ):
     """
     Delete a frame from the index.
