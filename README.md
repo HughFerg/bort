@@ -1,5 +1,9 @@
 # Simpsons Semantic Scene Search
 
+decisions:
+- removed credits but kept ones with stuff in the backgroiund
+- s1-12 because thats when i cant stand to keep watching
+
 A local search engine that lets you find Simpsons scenes by describing what's happening visually, powered by CLIP embeddings and vector search.
 
 **Unlike subtitle search (Frinkiac), this searches what's actually happening in the frames.**

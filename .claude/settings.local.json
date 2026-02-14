@@ -13,7 +13,11 @@
       "Bash(pkill:*)",
       "Bash(uvicorn:*)",
       "Bash(open http://127.0.0.1:8000)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(docker system prune:*)",
+      "Bash(docker build:*)",
+      "Bash(/Users/hughferguson/repos/bort/venv/bin/python:*)",
+      "Bash(/Users/hughferguson/repos/bort/venv/bin/pip:*)"
     ]
   }
 }

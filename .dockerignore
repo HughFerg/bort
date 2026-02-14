@@ -31,10 +31,23 @@ docker-compose.yml
 .DS_Store
 Thumbs.db
 
+# Data directories (large, not needed in container)
+data/
+frames.lance/
+training/
+
 # Temp files
 *.log
 *.tmp
 .cache/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Claude
+.claude/
 
 # Scripts (keep in repo but not needed in container)
 monitor_*.sh

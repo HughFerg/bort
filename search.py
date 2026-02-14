@@ -52,11 +52,21 @@ def get_image_urls(episode: str, frame: str) -> dict:
         }
 
 
-def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+security_optional = HTTPBasic(auto_error=False)
+
+
+def verify_admin(credentials: HTTPBasicCredentials | None = Depends(security_optional)):
     """Verify admin credentials for protected endpoints."""
     if not ADMIN_PASSWORD:
         # No password set - allow access (development mode)
         return True
+
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
     # Use secrets.compare_digest to prevent timing attacks
     password_correct = secrets.compare_digest(
@@ -178,6 +188,12 @@ def root():
 
 
 
+@app.get("/faq")
+def faq():
+    """Serve the FAQ page."""
+    return FileResponse("frontend/faq.html")
+
+
 @app.get("/legal")
 def legal():
     """Return legal disclaimer and copyright information."""
@@ -209,6 +225,7 @@ def search(
     request: Request,
     q: str = Query(..., description="Natural language search query"),
     limit: int = Query(20, ge=1, le=100, description="Number of results to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
     mode: str = Query("visual", description="Search mode: 'visual' or 'quote'"),
     season: str = Query(None, description="Comma-separated season codes to filter (e.g., 's01,s02')")
 ):
@@ -239,7 +256,9 @@ def search(
         if mode == "quote":
             # Quote mode: use CLIP embedding but with heavy caption boosting
             query_embedding = embed_text(q)
-            results = table.search(query_embedding).limit(limit * 10).to_list()
+            end = offset + limit
+            fetch_limit = max(end * 10, 1000)
+            results = table.search(query_embedding).limit(fetch_limit).to_list()
 
             # Filter by season if specified
             if season_filters:
@@ -265,12 +284,13 @@ def search(
 
                 scored_results.append({**r, "_score": score})
 
-            # Sort by score descending
+            # Sort by score descending and paginate
             scored_results.sort(key=lambda x: x["_score"], reverse=True)
-            results = scored_results[:limit]
+            results = scored_results[offset:end]
 
-            # Log the search
-            log_search(q, mode, len(results), request.client.host if request.client else "")
+            # Log the search (only on first page)
+            if offset == 0:
+                log_search(q, mode, len(results), request.client.host if request.client else "")
 
             return [{
                 "episode": r["episode"],
@@ -284,8 +304,9 @@ def search(
         else:
             # Visual mode: use CLIP embeddings with hybrid boosting
             query_embedding = embed_text(q)
-            # Get more results for re-ranking (more if filtering by season)
-            fetch_limit = limit * 10 if season_filters else limit * 3
+            # Fetch enough to cover offset + limit after re-ranking
+            end = offset + limit
+            fetch_limit = max(end * 3, 300) if not season_filters else max(end * 10, 1000)
             results = table.search(query_embedding).limit(fetch_limit).to_list()
 
             # Filter by season if specified
@@ -311,11 +332,12 @@ def search(
                     multiplier = max(0.1, 1 - 0.3 * character_matches)
                     r["_distance"] = r["_distance"] * multiplier
 
-            # Re-sort by adjusted distance and take top results
-            results = sorted(results, key=lambda x: x["_distance"])[:limit]
+            # Re-sort by adjusted distance and paginate
+            results = sorted(results, key=lambda x: x["_distance"])[offset:end]
 
-            # Log the search
-            log_search(q, mode, len(results), request.client.host if request.client else "")
+            # Log the search (only on first page)
+            if offset == 0:
+                log_search(q, mode, len(results), request.client.host if request.client else "")
 
             return [{
                 "episode": r["episode"],

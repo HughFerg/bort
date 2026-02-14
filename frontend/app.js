@@ -11,25 +11,9 @@ let activeFilters = {
 };
 let episodeNames = {};
 let hasSearched = false;
-const MAX_RESULTS = 100;
 const MIN_SCORE_THRESHOLD = 0.05;
 const MAX_HISTORY = 10;
-let searchMode = 'visual'; // 'visual' or 'quote'
 let searchHistory = [];
-
-function setSearchMode(mode) {
-    searchMode = mode;
-    document.getElementById('modeVisual').classList.toggle('active', mode === 'visual');
-    document.getElementById('modeQuote').classList.toggle('active', mode === 'quote');
-
-    // Update placeholder based on mode
-    const input = document.getElementById('query');
-    if (mode === 'quote') {
-        input.placeholder = 'Search by quote or dialogue...';
-    } else {
-        input.placeholder = 'Search by scene or action...';
-    }
-}
 
 function setSearchedState(searched) {
     hasSearched = searched;
@@ -142,6 +126,41 @@ function buildSearchQuery() {
 
 let currentResultsList = [];
 let currentModalIndex = -1;
+let currentOffset = 0;
+let isLoadingMore = false;
+let hasMoreResults = true;
+const PAGE_SIZE = 40;
+
+function buildSearchUrl(query, offset) {
+    let url = `/search?q=${encodeURIComponent(query)}&limit=${PAGE_SIZE}&offset=${offset}`;
+    if (activeFilters.season.size > 0) {
+        const seasons = Array.from(activeFilters.season).map(s => `s${s.padStart(2, '0')}`);
+        url += `&season=${seasons.join(',')}`;
+    }
+    return url;
+}
+
+function renderResultCard(r, index) {
+    const episodeTitle = getEpisodeTitle(r.episode);
+    const episodeCode = r.episode.match(/s\d+e\d+/i)?.[0]?.toUpperCase() || r.episode;
+    const thumbUrl = r.thumb_url || r.image_url;
+    return `
+        <div class="result${selectedFrames.has(r.path) ? ' selected' : ''}" data-path="${r.path}" onclick="handleFrameClick('${r.image_url}', '${escapeAttr(r.episode)}', ${r.timestamp}, '${escapeAttr(r.path)}', '${r.frame}', ${index}, event)">
+            <img src="${thumbUrl}" alt="${r.episode}" loading="lazy" onload="this.classList.add('loaded')">
+            <div class="result-info">
+                <div class="result-meta">
+                    <span class="episode">${episodeCode}${episodeTitle ? ` &middot; ${episodeTitle}` : ''}</span>
+                    <span class="time">${formatTime(r.timestamp)}</span>
+                </div>
+                <div class="result-buttons">
+                    <button class="action-btn" onclick="event.stopPropagation(); copyImageUrl('${r.image_url}', this)" title="Copy image URL">Copy</button>
+                    <button class="action-btn" onclick="event.stopPropagation(); downloadImage('${r.image_url}', '${r.episode}_${r.frame}')" title="Download image">Download</button>
+                    <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${escapeAttr(r.path)}')" title="Find similar frames">Similar</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
 
 async function search() {
     const query = buildSearchQuery();
@@ -151,7 +170,11 @@ async function search() {
     const resultsDiv = document.getElementById('results');
     const searchBtn = document.getElementById('searchBtn');
 
-    // Save to history and update URL
+    // Reset pagination
+    currentOffset = 0;
+    hasMoreResults = true;
+    currentResultsList = [];
+
     saveToHistory(currentQuery);
     updateURL(currentQuery);
     hideHistoryDropdown();
@@ -160,62 +183,28 @@ async function search() {
     searchBtn.disabled = true;
 
     try {
-        let url = `/search?q=${encodeURIComponent(query)}&limit=${MAX_RESULTS}`;
-
-        // Add search mode
-        if (searchMode === 'quote') {
-            url += '&mode=quote';
-        }
-
-        // Add season filter
-        if (activeFilters.season.size > 0) {
-            const seasons = Array.from(activeFilters.season).map(s => `s${s.padStart(2, '0')}`);
-            url += `&season=${seasons.join(',')}`;
-        }
-
-        const response = await fetch(url);
+        const response = await fetch(buildSearchUrl(query, 0));
 
         if (!response.ok) {
             throw new Error(`Search failed: ${response.statusText}`);
         }
 
         let results = await response.json();
-
-        // Filter by score threshold - stop showing results below threshold
         results = results.filter(r => r.score >= MIN_SCORE_THRESHOLD);
 
-        // Switch to searched state
         setSearchedState(true);
 
         if (results.length === 0) {
             showEmptyState(resultsDiv);
+            hasMoreResults = false;
             return;
         }
 
-        // Store for navigation
         currentResultsList = results;
+        currentOffset = results.length;
+        hasMoreResults = results.length === PAGE_SIZE;
 
-        resultsDiv.innerHTML = results.map((r, index) => {
-            const episodeTitle = getEpisodeTitle(r.episode);
-            const episodeCode = r.episode.match(/s\d+e\d+/i)?.[0]?.toUpperCase() || r.episode;
-            const thumbUrl = r.thumb_url || r.image_url;  // Fallback to full-res if no thumbnail
-            return `
-                <div class="result${selectedFrames.has(r.path) ? ' selected' : ''}" data-path="${r.path}" onclick="handleFrameClick('${r.image_url}', '${escapeAttr(r.episode)}', ${r.timestamp}, '${escapeAttr(r.path)}', '${r.frame}', ${index}, event)">
-                    <img src="${thumbUrl}" alt="${r.episode}" loading="lazy">
-                    <div class="result-info">
-                        <div class="result-meta">
-                            <span class="episode">${episodeCode}${episodeTitle ? ` - ${episodeTitle}` : ''}</span>
-                            <span class="time">${formatTime(r.timestamp)}</span>
-                        </div>
-                        <div class="result-buttons">
-                            <button class="action-btn" onclick="event.stopPropagation(); copyImageUrl('${r.image_url}', this)" title="Copy image URL">Copy</button>
-                            <button class="action-btn" onclick="event.stopPropagation(); downloadImage('${r.image_url}', '${r.episode}_${r.frame}')" title="Download image">Download</button>
-                            <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${escapeAttr(r.path)}')" title="Find similar frames">Similar</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        resultsDiv.innerHTML = results.map((r, index) => renderResultCard(r, index)).join('');
 
     } catch (err) {
         resultsDiv.innerHTML = `
@@ -226,6 +215,50 @@ async function search() {
         `;
     } finally {
         searchBtn.disabled = false;
+    }
+}
+
+async function loadMore() {
+    if (isLoadingMore || !hasMoreResults || !currentQuery) return;
+    isLoadingMore = true;
+
+    const resultsDiv = document.getElementById('results');
+    const loader = document.createElement('div');
+    loader.className = 'loading';
+    loader.id = 'loadMoreSpinner';
+    loader.textContent = 'loading more...';
+    resultsDiv.appendChild(loader);
+
+    try {
+        const response = await fetch(buildSearchUrl(currentQuery, currentOffset));
+
+        if (!response.ok) throw new Error('Failed to load more');
+
+        let results = await response.json();
+        results = results.filter(r => r.score >= MIN_SCORE_THRESHOLD);
+
+        loader.remove();
+
+        if (results.length === 0) {
+            hasMoreResults = false;
+            return;
+        }
+
+        const startIndex = currentResultsList.length;
+        currentResultsList.push(...results);
+        currentOffset += results.length;
+        hasMoreResults = results.length === PAGE_SIZE;
+
+        const fragment = document.createRange().createContextualFragment(
+            results.map((r, i) => renderResultCard(r, startIndex + i)).join('')
+        );
+        resultsDiv.appendChild(fragment);
+
+    } catch (err) {
+        loader.remove();
+        console.error('Failed to load more:', err);
+    } finally {
+        isLoadingMore = false;
     }
 }
 
@@ -249,10 +282,10 @@ async function randomFrame() {
 
         resultsDiv.innerHTML = `
             <div class="result" data-path="${result.path}" onclick="handleFrameClick('${result.image_url}', '${escapeAttr(result.episode)}', ${result.timestamp}, '${escapeAttr(result.path)}', '${result.frame}', -1, event)">
-                <img src="${thumbUrl}" alt="${result.episode}" loading="lazy">
+                <img src="${thumbUrl}" alt="${result.episode}" loading="lazy" onload="this.classList.add('loaded')">
                 <div class="result-info">
                     <div class="result-meta">
-                        <span class="episode">${episodeCode}${episodeTitle ? ` - ${episodeTitle}` : ''}</span>
+                        <span class="episode">${episodeCode}${episodeTitle ? ` &middot; ${episodeTitle}` : ''}</span>
                         <span class="time">${formatTime(result.timestamp)}</span>
                     </div>
                     <div class="result-buttons">
@@ -325,10 +358,10 @@ async function findSimilar(path) {
             const thumbUrl = r.thumb_url || r.image_url;  // Fallback to full-res if no thumbnail
             return `
                 <div class="result${selectedFrames.has(r.path) ? ' selected' : ''}" data-path="${r.path}" onclick="handleFrameClick('${r.image_url}', '${escapeAttr(r.episode)}', ${r.timestamp}, '${escapeAttr(r.path)}', '${r.frame}', ${index}, event)">
-                    <img src="${thumbUrl}" alt="${r.episode}" loading="lazy">
+                    <img src="${thumbUrl}" alt="${r.episode}" loading="lazy" onload="this.classList.add('loaded')">
                     <div class="result-info">
                         <div class="result-meta">
-                            <span class="episode">${episodeCode}${episodeTitle ? ` - ${episodeTitle}` : ''}</span>
+                            <span class="episode">${episodeCode}${episodeTitle ? ` &middot; ${episodeTitle}` : ''}</span>
                             <span class="time">${formatTime(r.timestamp)}</span>
                         </div>
                         <div class="result-buttons">
@@ -474,7 +507,8 @@ function openModal(imageUrl, episode, timestamp, path, frame, index = -1) {
 
     // Set episode and time info
     const episodeCode = episode ? episode.match(/s\d+e\d+/i)?.[0]?.toUpperCase() || episode : '';
-    document.getElementById('modalEpisode').textContent = episodeCode;
+    const episodeTitle = episode ? getEpisodeTitle(episode) : '';
+    document.getElementById('modalEpisode').textContent = episodeCode + (episodeTitle ? ` \u00B7 ${episodeTitle}` : '');
     document.getElementById('modalTime').textContent = timestamp ? formatTime(timestamp) : '';
     document.getElementById('modalPath').textContent = path || '';
 
@@ -489,6 +523,7 @@ function openModal(imageUrl, episode, timestamp, path, frame, index = -1) {
         <button class="modal-btn" onclick="copyImageUrl('${imageUrl}', this)">Copy URL</button>
         <button class="modal-btn" onclick="downloadImage('${imageUrl}', '${filename}')">Download</button>
         ${path ? `<button class="modal-btn" onclick="closeModal(); findSimilar('${escapedPath}')">Similar</button>` : ''}
+        ${path ? `<button class="modal-btn modal-delete" onclick="deleteFrameFromModal('${escapedPath}')">Delete</button>` : ''}
         ${hasNext ? `<button class="modal-btn modal-nav" onclick="navigateModal(1)">Next →</button>` : ''}
     `;
 
@@ -561,23 +596,10 @@ function handleFrameClick(imageUrl, episode, timestamp, path, frame, index, even
 }
 
 function updateBulkActions() {
-    const bulkActions = document.getElementById('bulkActions');
     const bulkCount = document.getElementById('bulkCount');
-    const selectToggle = document.getElementById('selectToggle');
+    bulkCount.textContent = `${selectedFrames.size} selected`;
 
-    if (selectMode || selectedFrames.size > 0) {
-        bulkActions.classList.add('visible');
-        bulkCount.textContent = selectedFrames.size > 0 ? `${selectedFrames.size} selected` : 'Select frames';
-        if (selectToggle) selectToggle.textContent = selectMode ? 'Done' : 'Select';
-    } else {
-        bulkActions.classList.remove('visible');
-    }
-
-    // Update checkboxes and card selected state
-    document.querySelectorAll('.frame-checkbox').forEach(checkbox => {
-        const path = checkbox.dataset.path;
-        checkbox.checked = selectedFrames.has(path);
-    });
+    // Update card selected state
     document.querySelectorAll('.result').forEach(card => {
         const path = card.dataset.path;
         card.classList.toggle('selected', selectedFrames.has(path));
@@ -590,14 +612,18 @@ function clearSelection() {
 }
 
 async function bulkDelete() {
-    if (selectedFrames.size === 0) return;
+    if (selectedFrames.size === 0) {
+        alert('No frames selected. Click on frames to select them first.');
+        return;
+    }
 
-    if (!confirm(`Delete ${selectedFrames.size} selected frames from the index?`)) {
+    if (!confirm(`Delete ${selectedFrames.size} selected frame(s) from the index?`)) {
         return;
     }
 
     const pathsToDelete = Array.from(selectedFrames);
     let successCount = 0;
+    let errors = [];
 
     for (const path of pathsToDelete) {
         try {
@@ -606,24 +632,58 @@ async function bulkDelete() {
             });
 
             if (response.ok) {
-                // Remove the frame card from DOM
-                const frameCard = document.querySelector(`.result[data-path="${path}"]`);
-                if (frameCard) {
-                    frameCard.remove();
-                }
+                // Remove the frame card from DOM using data attribute search
+                document.querySelectorAll('.result').forEach(card => {
+                    if (card.dataset.path === path) card.remove();
+                });
                 selectedFrames.delete(path);
                 successCount++;
+            } else {
+                errors.push(`${path}: ${response.statusText}`);
             }
         } catch (err) {
-            console.error(`Failed to delete ${path}:`, err);
+            errors.push(`${path}: ${err.message}`);
         }
     }
 
     updateBulkActions();
-    await loadStats();
 
     if (successCount > 0) {
-        alert(`Successfully deleted ${successCount} frame(s)`);
+        alert(`Deleted ${successCount} frame(s)` + (errors.length ? `\n\nFailed: ${errors.length}` : ''));
+    } else if (errors.length > 0) {
+        alert(`All deletes failed:\n${errors.join('\n')}`);
+    }
+}
+
+async function deleteFrameFromModal(path) {
+    try {
+        const response = await fetch(`/frame/delete?path=${encodeURIComponent(path)}`, {
+            method: 'POST'
+        });
+
+        if (!response.ok) throw new Error('Delete failed');
+
+        // Remove from DOM
+        const frameCard = document.querySelector(`.result[data-path="${CSS.escape(path)}"]`);
+        if (frameCard) frameCard.remove();
+
+        // Remove from results list
+        const idx = currentResultsList.findIndex(r => r.path === path);
+        if (idx !== -1) currentResultsList.splice(idx, 1);
+
+        // Navigate to next frame or close modal
+        if (currentModalIndex < currentResultsList.length) {
+            const r = currentResultsList[currentModalIndex];
+            openModal(r.image_url, r.episode, r.timestamp, r.path, r.frame, currentModalIndex);
+        } else if (currentResultsList.length > 0) {
+            currentModalIndex = currentResultsList.length - 1;
+            const r = currentResultsList[currentModalIndex];
+            openModal(r.image_url, r.episode, r.timestamp, r.path, r.frame, currentModalIndex);
+        } else {
+            closeModal();
+        }
+    } catch (err) {
+        alert(`Failed to delete: ${err.message}`);
     }
 }
 
@@ -758,6 +818,15 @@ function hideHistoryDropdown() {
         dropdown.classList.remove('visible');
     }
 }
+
+// Infinite scroll
+window.addEventListener('scroll', () => {
+    if (!hasMoreResults || isLoadingMore) return;
+    const scrollBottom = window.innerHeight + window.scrollY;
+    if (scrollBottom >= document.body.offsetHeight - 600) {
+        loadMore();
+    }
+});
 
 // Setup search input focus/blur for history dropdown
 document.addEventListener('DOMContentLoaded', () => {

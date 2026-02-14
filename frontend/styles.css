@@ -414,7 +414,7 @@ body.searched .filter-pills {
     margin-bottom: 15px;
 }
 
-body:not(.searched) .stats {
+body.searched .stats {
     display: none;
 }
 
@@ -468,6 +468,12 @@ body:not(.searched) .stats {
     aspect-ratio: 16/9;
     object-fit: cover;
     display: block;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.result img.loaded {
+    opacity: 1;
 }
 
 .result-info {
@@ -594,6 +600,39 @@ body:not(.searched) .stats {
     transform: translateX(-3px);
 }
 
+/* Select FAB - visible after search */
+.select-fab {
+    display: none;
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--yellow);
+    color: var(--dark);
+    border: none;
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: bold;
+    font-family: inherit;
+    border-radius: 24px;
+    cursor: pointer;
+    z-index: 999;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    transition: background 0.15s, transform 0.15s;
+}
+
+.select-fab:hover {
+    background: var(--orange);
+    transform: scale(1.05);
+}
+
+body.searched .select-fab {
+    display: block;
+}
+
+body.select-mode .select-fab {
+    display: none;
+}
+
 /* Bulk Actions */
 .bulk-actions {
     position: fixed;
@@ -614,24 +653,8 @@ body:not(.searched) .stats {
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
 }
 
-.bulk-actions.visible {
+body.select-mode .bulk-actions {
     display: flex;
-}
-
-.select-toggle-btn {
-    background: var(--yellow);
-    color: var(--dark);
-    border: none;
-    padding: 8px 16px;
-    font-size: 12px;
-    border-radius: 15px;
-    box-shadow: none;
-}
-
-.select-toggle-btn:hover {
-    background: var(--orange);
-    transform: none;
-    box-shadow: none;
 }
 
 .bulk-delete-btn {
@@ -665,13 +688,52 @@ body:not(.searched) .stats {
     box-shadow: none;
 }
 
+.bulk-done-btn {
+    background: var(--yellow);
+    color: var(--dark);
+    border: none;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-family: inherit;
+    border-radius: 15px;
+    cursor: pointer;
+    box-shadow: none;
+}
+
+.bulk-done-btn:hover {
+    background: var(--orange);
+    transform: none;
+    box-shadow: none;
+}
+
 /* Select mode styles */
 body.select-mode .result {
     cursor: pointer;
 }
 
-body.select-mode .frame-checkbox {
-    opacity: 1;
+body.select-mode .result::after {
+    content: '';
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 5;
+}
+
+body.select-mode .result.selected::after {
+    content: '\2713';
+    background: var(--pink);
+    border-color: var(--pink);
+    color: #fff;
+    font-size: 14px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .result.selected {
@@ -772,28 +834,29 @@ body.select-mode .frame-checkbox {
 
 .modal-close {
     position: absolute;
-    top: -50px;
-    right: 0;
-    background: linear-gradient(135deg, var(--orange) 0%, #e56b10 100%);
+    top: -16px;
+    right: -16px;
+    background: #dc3545;
     color: #fff;
-    border: 3px solid #c45e10;
+    border: 2px solid #a71d2a;
     border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    font-size: 22px;
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
     cursor: pointer;
-    box-shadow: 0 4px 0 #a04d0d;
-    /* Center the X */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
     line-height: 1;
+    transition: background 0.15s, transform 0.15s;
 }
 
 .modal-close:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 0 #a04d0d;
+    background: #bb2d3b;
+    transform: scale(1.1);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.5);
 }
 
 .modal-info {
@@ -848,6 +911,18 @@ body.select-mode .frame-checkbox {
 .modal-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 5px 0 #c45e10;
+}
+
+.modal-delete {
+    background: #dc3545;
+    color: #fff;
+    border-color: #a71d2a;
+    box-shadow: 0 3px 0 #a71d2a;
+}
+
+.modal-delete:hover {
+    background: #bb2d3b;
+    box-shadow: 0 5px 0 #a71d2a;
 }
 
 .modal-nav {

@@ -19,7 +19,7 @@
     <meta name="twitter:description" content="Search The Simpsons scenes by character, action, or description.">
 
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23FFB6D9'/><circle cx='50' cy='50' r='20' fill='%23FFF'/><ellipse cx='45' cy='40' rx='8' ry='6' fill='%23FF69B4' opacity='0.6'/><ellipse cx='60' cy='45' rx='6' ry='5' fill='%23FF69B4' opacity='0.6'/><ellipse cx='50' cy='55' rx='7' ry='5' fill='%23FF69B4' opacity='0.6'/></svg>">
-    <link rel="stylesheet" href="/static/styles.css?v=9">
+    <link rel="stylesheet" href="/static/styles.css?v=17">
 </head>
 <body>
     <header onclick="resetToLanding()" title="Click to return to home">
@@ -56,11 +56,11 @@
         </div>
 
         <div class="examples">
-            <button class="example-btn" onclick="searchExample('homer eating donuts')">🍩 donuts</button>
-            <button class="example-btn" onclick="searchExample('bart skateboard')">🛹 skateboard</button>
-            <button class="example-btn" onclick="searchExample('mr burns excellent')">😈 excellent</button>
-            <button class="example-btn" onclick="searchExample('moe tavern bar')">🍺 moe's</button>
-            <button class="example-btn" onclick="searchExample('couch gag')">🛋️ couch</button>
+            <button class="example-btn" onclick="searchExample('a sunset over springfield')">a sunset over springfield</button>
+            <button class="example-btn" onclick="searchExample('someone running away')">someone running away</button>
+            <button class="example-btn" onclick="searchExample('two characters staring at each other')">two characters staring at each other</button>
+            <button class="example-btn" onclick="searchExample('an empty room')">an empty room</button>
+            <button class="example-btn" onclick="searchExample('crowd of people cheering')">crowd of people cheering</button>
         </div>
     </div>
 
@@ -87,11 +87,12 @@
         </div>
     </div>
 
+    <button class="select-fab" id="selectFab" onclick="toggleSelectMode()">Select</button>
     <div class="bulk-actions" id="bulkActions">
-        <button class="select-toggle-btn" id="selectToggle" onclick="toggleSelectMode()">Select</button>
-        <span id="bulkCount">Select frames</span>
-        <button class="bulk-delete-btn" onclick="bulkDelete()">Delete</button>
+        <span id="bulkCount">0 selected</span>
+        <button class="bulk-delete-btn" onclick="bulkDelete()">Delete Selected</button>
         <button class="bulk-clear-btn" onclick="clearSelection()">Clear</button>
+        <button class="bulk-done-btn" onclick="toggleSelectMode()">Done</button>
     </div>
 
     <footer class="disclaimer">
@@ -103,10 +104,10 @@
             Used under fair use for non-commercial, educational purposes.
         </p>
         <p class="disclaimer-links">
-            <a href="/legal">Legal Info</a>
+            <a href="/faq">FAQ</a> &middot; <a href="/legal">Legal</a>
         </p>
     </footer>
 
-    <script src="/static/app.js?v=9"></script>
+    <script src="/static/app.js?v=17"></script>
 </body>
 </html>
