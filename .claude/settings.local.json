@@ -26,7 +26,8 @@
       "Bash(npx:*)",
       "Bash(node --check:*)",
       "Bash(open:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "WebFetch(domain:porkbun.com)"
     ]
   }
 }

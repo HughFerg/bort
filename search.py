@@ -194,10 +194,10 @@ def test_delete():
 
 
 
-@app.get("/faq")
-def faq():
-    """Serve the FAQ page."""
-    return FileResponse("frontend/faq.html")
+@app.get("/about")
+def about():
+    """Serve the About page."""
+    return FileResponse("frontend/about.html")
 
 
 @app.get("/legal")

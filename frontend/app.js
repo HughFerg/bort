@@ -11,7 +11,7 @@ let activeFilters = {
 };
 let episodeNames = {};
 let hasSearched = false;
-const MIN_SCORE_THRESHOLD = 0.05;
+const MIN_SCORE_THRESHOLD = 0.20;
 const MAX_HISTORY = 10;
 let searchHistory = [];
 
@@ -49,10 +49,7 @@ async function loadStats() {
     try {
         const response = await fetch('/stats');
         const stats = await response.json();
-        document.getElementById('stats').innerHTML =
-            `${stats.total_frames.toLocaleString()} frames from ${stats.episodes} episode${stats.episodes > 1 ? 's' : ''}`;
-        document.getElementById('subtitle').innerHTML =
-            `Search ${stats.total_frames.toLocaleString()} frames by scene or action`;
+        document.getElementById('stats').innerHTML = '';
 
         // Load indexed seasons
         if (stats.seasons) {
@@ -129,7 +126,7 @@ let currentModalIndex = -1;
 let currentOffset = 0;
 let isLoadingMore = false;
 let hasMoreResults = true;
-const PAGE_SIZE = 40;
+const PAGE_SIZE = 100;
 
 function buildSearchUrl(query, offset) {
     let url = `/search?q=${encodeURIComponent(query)}&limit=${PAGE_SIZE}&offset=${offset}`;
@@ -184,7 +181,7 @@ async function search() {
     updateURL(currentQuery);
     hideHistoryDropdown();
 
-    resultsDiv.innerHTML = `<div class="loading">bort searching</div>`;
+    resultsDiv.innerHTML = `<div class="loading">searching...</div>`;
     searchBtn.disabled = true;
 
     try {
@@ -206,8 +203,7 @@ async function search() {
         }
 
         currentResultsList = results;
-        currentOffset = results.length;
-        hasMoreResults = results.length === PAGE_SIZE;
+        hasMoreResults = false;
 
         resultsDiv.innerHTML = results.map((r, index) => renderResultCard(r, index)).join('');
 
@@ -269,7 +265,7 @@ async function loadMore() {
 
 async function randomFrame() {
     const resultsDiv = document.getElementById('results');
-    resultsDiv.innerHTML = `<div class="loading">bort searching</div>`;
+    resultsDiv.innerHTML = `<div class="loading">searching...</div>`;
 
     try {
         const response = await fetch('/random');
@@ -312,7 +308,7 @@ let currentSimilarSource = null;  // Track source frame for similar search
 
 async function findSimilar(path) {
     const resultsDiv = document.getElementById('results');
-    resultsDiv.innerHTML = `<div class="loading">bort searching</div>`;
+    resultsDiv.innerHTML = `<div class="loading">searching...</div>`;
 
     // Store source path for back navigation
     currentSimilarSource = path;
@@ -853,14 +849,6 @@ function hideHistoryDropdown() {
     }
 }
 
-// Infinite scroll
-window.addEventListener('scroll', () => {
-    if (!hasMoreResults || isLoadingMore) return;
-    const scrollBottom = window.innerHeight + window.scrollY;
-    if (scrollBottom >= document.body.offsetHeight - 600) {
-        loadMore();
-    }
-});
 
 // Setup search input focus/blur for history dropdown
 document.addEventListener('DOMContentLoaded', () => {

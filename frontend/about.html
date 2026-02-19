@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About - Flanderize</title>
+    <link rel="stylesheet" href="/static/styles.css?v=22">
+    <style>
+        body {
+            display: block;
+            padding: 40px 20px;
+            max-width: 700px;
+        }
+        .about-header {
+            margin-bottom: 40px;
+        }
+        .about-header a {
+            color: var(--yellow);
+            text-decoration: none;
+            font-family: 'Arial Black', sans-serif;
+            font-size: 1.2rem;
+        }
+        .about-header a:hover {
+            text-decoration: underline;
+        }
+        .about-title {
+            font-size: 2.5rem;
+            color: var(--yellow);
+            margin-top: 10px;
+        }
+        .about-item {
+            margin-bottom: 30px;
+        }
+        .about-item h2 {
+            font-size: 1.1rem;
+            color: var(--yellow);
+            margin-bottom: 8px;
+        }
+        .about-item p {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.6);
+            line-height: 1.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="about-header">
+        <a href="/">Flanderize</a>
+        <h1 class="about-title">About</h1>
+    </div>
+
+    <div class="about-item">
+        <h2>What is Flanderize?</h2>
+        <p>A visual search engine for The Simpsons. Describe a scene, a mood, a visual — and it finds the matching frame. Every indexed episode is searchable by what's actually happening on screen, not just quotes or episode titles.</p>
+    </div>
+
+    <div class="about-item">
+        <h2>How does it work?</h2>
+        <p>Each frame is encoded into a vector embedding using CLIP, a neural network trained to understand images and text together. When you search, your query is embedded the same way and compared against every frame. The closest matches win.</p>
+    </div>
+
+    <div class="about-item">
+        <h2>Why does it sometimes return weird results?</h2>
+        <p>CLIP understands visual concepts, not Simpsons lore. Searching for a character's name won't help — describe what you see instead. "Man in white shirt looking surprised" will beat "Homer" every time.</p>
+    </div>
+
+    <div class="about-item">
+        <h2>Legal</h2>
+        <p>This is a fan-made research/educational tool. The Simpsons and all related content are trademarks of and copyrighted by 20th Television and The Walt Disney Company. This site is not affiliated with or endorsed by the copyright holders. Used under fair use for non-commercial, educational purposes.</p>
+    </div>
+</body>
+</html>

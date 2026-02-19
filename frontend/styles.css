@@ -1,4 +1,4 @@
-/* BORT - Fun Visual Aesthetic */
+/* Flanderize - Simpsons Scene Search */
 
 * {
     box-sizing: border-box;
@@ -81,6 +81,29 @@ body.searched header:hover {
     background: rgba(255, 194, 14, 0.25);
 }
 
+/* Top nav (About link, shown in searched state) */
+.top-nav {
+    display: none;
+}
+
+body.searched .top-nav {
+    display: block;
+    margin-top: 6px;
+}
+
+.top-nav a {
+    color: rgba(255, 194, 14, 0.7);
+    text-decoration: none;
+    font-size: 11px;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 1px;
+}
+
+.top-nav a:hover {
+    color: var(--yellow);
+    text-decoration: underline;
+}
+
 h1 {
     font-size: 7rem;
     font-weight: 900;
@@ -129,6 +152,8 @@ body.searched .subtitle {
     border: 3px solid rgba(255, 194, 14, 0.4);
     border-radius: 20px;
     backdrop-filter: blur(10px);
+    position: relative;
+    z-index: 200;
 }
 
 body.searched .search-container {
