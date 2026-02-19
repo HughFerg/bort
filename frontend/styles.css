@@ -81,25 +81,37 @@ body.searched header:hover {
     background: rgba(255, 194, 14, 0.25);
 }
 
-/* Top nav (About link, shown in searched state) */
-.top-nav {
+/* Top row: FLANDERIZE title + About link side by side in searched state */
+.top-row {
+    display: contents; /* transparent in landing state — children flow normally */
+}
+
+body.searched .top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 15px;
+}
+
+body.searched .top-row header {
+    margin-bottom: 0;
+}
+
+.about-link {
     display: none;
 }
 
-body.searched .top-nav {
+body.searched .about-link {
     display: block;
-    margin-top: 6px;
-}
-
-.top-nav a {
     color: rgba(255, 194, 14, 0.7);
     text-decoration: none;
-    font-size: 11px;
+    font-size: 12px;
     font-family: 'Courier New', monospace;
     letter-spacing: 1px;
+    white-space: nowrap;
 }
 
-.top-nav a:hover {
+body.searched .about-link:hover {
     color: var(--yellow);
     text-decoration: underline;
 }

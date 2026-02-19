@@ -22,13 +22,13 @@
     <link rel="stylesheet" href="/static/styles.css?v=22">
 </head>
 <body>
-    <header onclick="resetToLanding()" title="Click to return to home">
-        <h1>FLANDERIZE</h1>
-        <p class="subtitle" id="subtitle">a visual search for the simpsons</p>
-        <nav class="top-nav" onclick="event.stopPropagation()">
-            <a href="/about">About</a>
-        </nav>
-    </header>
+    <div class="top-row">
+        <header onclick="resetToLanding()" title="Click to return to home">
+            <h1>FLANDERIZE</h1>
+            <p class="subtitle" id="subtitle">a visual search for the simpsons</p>
+        </header>
+        <a href="/about" class="about-link">About</a>
+    </div>
 
     <div class="search-container">
         <div class="search-box">
