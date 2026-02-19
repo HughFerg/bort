@@ -187,6 +187,12 @@ def root():
     return FileResponse("frontend/index.html")
 
 
+@app.get("/test-delete")
+def test_delete():
+    """Serve the delete test page."""
+    return FileResponse("frontend/test_delete.html")
+
+
 
 @app.get("/faq")
 def faq():

@@ -140,22 +140,27 @@ function buildSearchUrl(query, offset) {
     return url;
 }
 
+function onCardClick(index, event) {
+    // In select mode, do nothing here - event delegation on #results handles it
+    if (selectMode) return;
+    const r = currentResultsList[index];
+    if (!r) return;
+    openModal(r.image_url, r.episode, r.timestamp, r.path, r.frame, index);
+}
+
 function renderResultCard(r, index) {
     const episodeTitle = getEpisodeTitle(r.episode);
     const episodeCode = r.episode.match(/s\d+e\d+/i)?.[0]?.toUpperCase() || r.episode;
     const thumbUrl = r.thumb_url || r.image_url;
     return `
-        <div class="result${selectedFrames.has(r.path) ? ' selected' : ''}" data-path="${r.path}" onclick="handleFrameClick('${r.image_url}', '${escapeAttr(r.episode)}', ${r.timestamp}, '${escapeAttr(r.path)}', '${r.frame}', ${index}, event)">
+        <div class="result${selectedFrames.has(r.path) ? ' selected' : ''}"
+             data-path="${r.path}"
+             onclick="onCardClick(${index}, event)">
             <img src="${thumbUrl}" alt="${r.episode}" loading="lazy" onload="this.classList.add('loaded')">
             <div class="result-info">
                 <div class="result-meta">
                     <span class="episode">${episodeCode}${episodeTitle ? ` &middot; ${episodeTitle}` : ''}</span>
                     <span class="time">${formatTime(r.timestamp)}</span>
-                </div>
-                <div class="result-buttons">
-                    <button class="action-btn" onclick="event.stopPropagation(); copyImageUrl('${r.image_url}', this)" title="Copy image URL">Copy</button>
-                    <button class="action-btn" onclick="event.stopPropagation(); downloadImage('${r.image_url}', '${r.episode}_${r.frame}')" title="Download image">Download</button>
-                    <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${escapeAttr(r.path)}')" title="Find similar frames">Similar</button>
                 </div>
             </div>
         </div>
@@ -280,18 +285,15 @@ async function randomFrame() {
         // Switch to searched state
         setSearchedState(true);
 
+        currentResultsList = [result];
+
         resultsDiv.innerHTML = `
-            <div class="result" data-path="${result.path}" onclick="handleFrameClick('${result.image_url}', '${escapeAttr(result.episode)}', ${result.timestamp}, '${escapeAttr(result.path)}', '${result.frame}', -1, event)">
+            <div class="result" data-path="${result.path}" onclick="onCardClick(0, event)">
                 <img src="${thumbUrl}" alt="${result.episode}" loading="lazy" onload="this.classList.add('loaded')">
                 <div class="result-info">
                     <div class="result-meta">
                         <span class="episode">${episodeCode}${episodeTitle ? ` &middot; ${episodeTitle}` : ''}</span>
                         <span class="time">${formatTime(result.timestamp)}</span>
-                    </div>
-                    <div class="result-buttons">
-                        <button class="action-btn" onclick="event.stopPropagation(); copyImageUrl('${result.image_url}', this)" title="Copy image URL">Copy</button>
-                        <button class="action-btn" onclick="event.stopPropagation(); downloadImage('${result.image_url}', '${result.episode}_${result.frame}')" title="Download image">Download</button>
-                        <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${escapeAttr(result.path)}')" title="Find similar frames">Similar</button>
                     </div>
                 </div>
             </div>
@@ -357,17 +359,14 @@ async function findSimilar(path) {
             const episodeCode = r.episode.match(/s\d+e\d+/i)?.[0]?.toUpperCase() || r.episode;
             const thumbUrl = r.thumb_url || r.image_url;  // Fallback to full-res if no thumbnail
             return `
-                <div class="result${selectedFrames.has(r.path) ? ' selected' : ''}" data-path="${r.path}" onclick="handleFrameClick('${r.image_url}', '${escapeAttr(r.episode)}', ${r.timestamp}, '${escapeAttr(r.path)}', '${r.frame}', ${index}, event)">
+                <div class="result${selectedFrames.has(r.path) ? ' selected' : ''}"
+                     data-path="${r.path}"
+                     onclick="onCardClick(${index}, event)">
                     <img src="${thumbUrl}" alt="${r.episode}" loading="lazy" onload="this.classList.add('loaded')">
                     <div class="result-info">
                         <div class="result-meta">
                             <span class="episode">${episodeCode}${episodeTitle ? ` &middot; ${episodeTitle}` : ''}</span>
                             <span class="time">${formatTime(r.timestamp)}</span>
-                        </div>
-                        <div class="result-buttons">
-                            <button class="action-btn" onclick="event.stopPropagation(); copyImageUrl('${r.image_url}', this)" title="Copy image URL">Copy</button>
-                            <button class="action-btn" onclick="event.stopPropagation(); downloadImage('${r.image_url}', '${r.episode}_${r.frame}')" title="Download image">Download</button>
-                            <button class="action-btn" onclick="event.stopPropagation(); findSimilar('${escapeAttr(r.path)}')" title="Find similar frames">Similar</button>
                         </div>
                     </div>
                 </div>
@@ -546,7 +545,11 @@ document.addEventListener('keydown', (e) => {
     const modalActive = document.getElementById('modal').classList.contains('active');
 
     if (e.key === 'Escape') {
-        closeModal();
+        if (selectMode) {
+            toggleSelectMode();
+        } else {
+            closeModal();
+        }
         hideHistoryDropdown();
     }
 
@@ -561,6 +564,12 @@ document.addEventListener('keydown', (e) => {
         }
     }
 
+    // Press "s" to toggle select mode (when not typing in input)
+    if (e.key === 's' && document.activeElement.tagName !== 'INPUT' && !modalActive && hasSearched) {
+        e.preventDefault();
+        toggleSelectMode();
+    }
+
     // Press "/" to focus search (like GitHub, YouTube, etc.)
     if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
         e.preventDefault();
@@ -568,32 +577,55 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// Event delegation: handle clicks on result cards in select mode
+document.getElementById('results').addEventListener('click', (e) => {
+    if (!selectMode) return; // Only intercept clicks in select mode
+    const card = e.target.closest('.result');
+    if (!card) return;
+    const path = card.dataset.path;
+    if (path) {
+        console.log('[SELECT] Card clicked, toggling:', path);
+        toggleFrameSelection(path);
+    }
+});
+
+function showToast(msg) {
+    let toast = document.getElementById('toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toast';
+        toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:bold;z-index:9999;opacity:0;transition:opacity 0.3s;pointer-events:none;';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 1500);
+}
+
 function toggleSelectMode() {
     selectMode = !selectMode;
+    console.log('[SELECT] toggleSelectMode called, selectMode now:', selectMode);
     document.body.classList.toggle('select-mode', selectMode);
+    showToast(selectMode ? 'SELECT MODE — tap frames to select' : 'SELECT MODE OFF');
     if (!selectMode) {
         clearSelection();
     }
     updateBulkActions();
 }
 
-function toggleFrameSelection(path, event) {
-    if (event) event.stopPropagation();
+function toggleFrameSelection(path) {
+    console.log('[SELECT] toggleFrameSelection called, path:', path);
     if (selectedFrames.has(path)) {
         selectedFrames.delete(path);
+        console.log('[SELECT] Deselected, size now:', selectedFrames.size);
     } else {
         selectedFrames.add(path);
+        console.log('[SELECT] Selected, size now:', selectedFrames.size);
     }
     updateBulkActions();
 }
 
-function handleFrameClick(imageUrl, episode, timestamp, path, frame, index, event) {
-    if (selectMode) {
-        toggleFrameSelection(path, event);
-    } else {
-        openModal(imageUrl, episode, timestamp, path, frame, index);
-    }
-}
 
 function updateBulkActions() {
     const bulkCount = document.getElementById('bulkCount');
@@ -612,6 +644,8 @@ function clearSelection() {
 }
 
 async function bulkDelete() {
+    console.log('[DELETE] bulkDelete called, selectedFrames.size:', selectedFrames.size);
+    console.log('[DELETE] selectedFrames:', Array.from(selectedFrames));
     if (selectedFrames.size === 0) {
         alert('No frames selected. Click on frames to select them first.');
         return;

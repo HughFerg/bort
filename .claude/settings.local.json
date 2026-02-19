@@ -17,7 +17,16 @@
       "Bash(docker system prune:*)",
       "Bash(docker build:*)",
       "Bash(/Users/hughferguson/repos/bort/venv/bin/python:*)",
-      "Bash(/Users/hughferguson/repos/bort/venv/bin/pip:*)"
+      "Bash(/Users/hughferguson/repos/bort/venv/bin/pip:*)",
+      "Bash(ssh:*)",
+      "Bash(rsync:*)",
+      "Bash(# Use:*)",
+      "Bash(# Try:*)",
+      "Bash(osascript:*)",
+      "Bash(npx:*)",
+      "Bash(node --check:*)",
+      "Bash(open:*)",
+      "Bash(node -e:*)"
     ]
   }
 }
