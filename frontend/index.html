@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-TEW2WGKFEF"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-TEW2WGKFEF');
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flanderize - Simpsons Scene Search</title>
@@ -35,7 +44,7 @@
             <input
                 type="text"
                 id="query"
-                placeholder="homer eating donuts, bart skateboarding..."
+                placeholder=""
                 onkeydown="if(event.key==='Enter') search()"
                 autofocus
             >
