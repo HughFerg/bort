@@ -1,6 +1,6 @@
 let currentQuery = '';
-let selectedFrames = new Set();
-let selectMode = false;
+var selectMode = false;
+var selectedFrames = new Set();
 
 // Escape strings for use in onclick attributes
 function escapeAttr(str) {
@@ -125,8 +125,11 @@ let currentResultsList = [];
 let currentModalIndex = -1;
 let currentOffset = 0;
 let isLoadingMore = false;
-let hasMoreResults = true;
-const PAGE_SIZE = 100;
+let hasMoreResults = false;
+let pagesLoaded = 0;
+const PAGE_SIZE = 24;
+const AUTO_SCROLL_PAGES = 4;
+let scrollObserver = null;
 
 function buildSearchUrl(query, offset) {
     let url = `/search?q=${encodeURIComponent(query)}&limit=${PAGE_SIZE}&offset=${offset}`;
@@ -135,6 +138,41 @@ function buildSearchUrl(query, offset) {
         url += `&season=${seasons.join(',')}`;
     }
     return url;
+}
+
+function teardownScrollObserver() {
+    if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; }
+    document.getElementById('scrollSentinel')?.remove();
+}
+
+function setupScrollObserver() {
+    teardownScrollObserver();
+    const sentinel = document.createElement('div');
+    sentinel.id = 'scrollSentinel';
+    document.getElementById('results').appendChild(sentinel);
+
+    scrollObserver = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && !isLoadingMore) {
+            scrollObserver.disconnect();
+            scrollObserver = null;
+            sentinel.remove();
+            loadMore();
+        }
+    }, { rootMargin: '400px' });
+
+    scrollObserver.observe(sentinel);
+}
+
+function appendMoreUI() {
+    if (!hasMoreResults) return;
+    if (pagesLoaded < AUTO_SCROLL_PAGES) {
+        setupScrollObserver();
+    } else {
+        document.getElementById('results').insertAdjacentHTML(
+            'beforeend',
+            `<button class="load-more-btn" onclick="loadMore()">Load more</button>`
+        );
+    }
 }
 
 function onCardClick(index, event) {
@@ -174,8 +212,10 @@ async function search() {
 
     // Reset pagination
     currentOffset = 0;
-    hasMoreResults = true;
+    hasMoreResults = false;
+    pagesLoaded = 0;
     currentResultsList = [];
+    teardownScrollObserver();
 
     saveToHistory(currentQuery);
     updateURL(currentQuery);
@@ -191,21 +231,23 @@ async function search() {
             throw new Error(`Search failed: ${response.statusText}`);
         }
 
-        let results = await response.json();
-        results = results.filter(r => r.score >= MIN_SCORE_THRESHOLD);
+        const rawResults = await response.json();
+        const results = rawResults.filter(r => r.score >= MIN_SCORE_THRESHOLD);
 
         setSearchedState(true);
 
         if (results.length === 0) {
             showEmptyState(resultsDiv);
-            hasMoreResults = false;
             return;
         }
 
         currentResultsList = results;
-        hasMoreResults = false;
+        currentOffset = rawResults.length;
+        hasMoreResults = rawResults.length === PAGE_SIZE;
+        pagesLoaded = 1;
 
         resultsDiv.innerHTML = results.map((r, index) => renderResultCard(r, index)).join('');
+        appendMoreUI();
 
     } catch (err) {
         resultsDiv.innerHTML = `
@@ -224,39 +266,35 @@ async function loadMore() {
     isLoadingMore = true;
 
     const resultsDiv = document.getElementById('results');
-    const loader = document.createElement('div');
-    loader.className = 'loading';
-    loader.id = 'loadMoreSpinner';
-    loader.textContent = 'loading more...';
-    resultsDiv.appendChild(loader);
+    const btn = resultsDiv.querySelector('.load-more-btn');
+    if (btn) { btn.textContent = 'loading...'; btn.disabled = true; }
 
     try {
         const response = await fetch(buildSearchUrl(currentQuery, currentOffset));
-
         if (!response.ok) throw new Error('Failed to load more');
 
-        let results = await response.json();
-        results = results.filter(r => r.score >= MIN_SCORE_THRESHOLD);
+        const rawResults = await response.json();
+        const results = rawResults.filter(r => r.score >= MIN_SCORE_THRESHOLD);
 
-        loader.remove();
+        hasMoreResults = rawResults.length === PAGE_SIZE;
+        pagesLoaded++;
+        if (btn) btn.remove();
 
-        if (results.length === 0) {
-            hasMoreResults = false;
-            return;
+        if (results.length > 0) {
+            const startIndex = currentResultsList.length;
+            currentResultsList.push(...results);
+            currentOffset += rawResults.length;
+            const fragment = document.createRange().createContextualFragment(
+                results.map((r, i) => renderResultCard(r, startIndex + i)).join('')
+            );
+            resultsDiv.appendChild(fragment);
         }
 
-        const startIndex = currentResultsList.length;
-        currentResultsList.push(...results);
-        currentOffset += results.length;
-        hasMoreResults = results.length === PAGE_SIZE;
-
-        const fragment = document.createRange().createContextualFragment(
-            results.map((r, i) => renderResultCard(r, startIndex + i)).join('')
-        );
-        resultsDiv.appendChild(fragment);
+        appendMoreUI();
 
     } catch (err) {
-        loader.remove();
+        if (btn) { btn.textContent = 'Load more'; btn.disabled = false; }
+        else if (pagesLoaded < AUTO_SCROLL_PAGES) setupScrollObserver();
         console.error('Failed to load more:', err);
     } finally {
         isLoadingMore = false;
@@ -518,7 +556,7 @@ function openModal(imageUrl, episode, timestamp, path, frame, index = -1) {
         <button class="modal-btn" onclick="copyImageUrl('${imageUrl}', this)">Copy URL</button>
         <button class="modal-btn" onclick="downloadImage('${imageUrl}', '${filename}')">Download</button>
         ${path ? `<button class="modal-btn" onclick="closeModal(); findSimilar('${escapedPath}')">Similar</button>` : ''}
-        ${path ? `<button class="modal-btn modal-delete" onclick="deleteFrameFromModal('${escapedPath}')">Delete</button>` : ''}
+        ${path && window.adminDeleteButton ? window.adminDeleteButton(escapedPath) : ''}
         ${hasNext ? `<button class="modal-btn modal-nav" onclick="navigateModal(1)">Next →</button>` : ''}
     `;
 
@@ -541,7 +579,7 @@ document.addEventListener('keydown', (e) => {
     const modalActive = document.getElementById('modal').classList.contains('active');
 
     if (e.key === 'Escape') {
-        if (selectMode) {
+        if (typeof toggleSelectMode === 'function' && typeof selectMode !== 'undefined' && selectMode) {
             toggleSelectMode();
         } else {
             closeModal();
@@ -560,28 +598,10 @@ document.addEventListener('keydown', (e) => {
         }
     }
 
-    // Press "s" to toggle select mode (when not typing in input)
-    if (e.key === 's' && document.activeElement.tagName !== 'INPUT' && !modalActive && hasSearched) {
-        e.preventDefault();
-        toggleSelectMode();
-    }
-
     // Press "/" to focus search (like GitHub, YouTube, etc.)
     if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
         e.preventDefault();
         document.getElementById('query').focus();
-    }
-});
-
-// Event delegation: handle clicks on result cards in select mode
-document.getElementById('results').addEventListener('click', (e) => {
-    if (!selectMode) return; // Only intercept clicks in select mode
-    const card = e.target.closest('.result');
-    if (!card) return;
-    const path = card.dataset.path;
-    if (path) {
-        console.log('[SELECT] Card clicked, toggling:', path);
-        toggleFrameSelection(path);
     }
 });
 
@@ -599,171 +619,24 @@ function showToast(msg) {
     toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 1500);
 }
 
-function toggleSelectMode() {
-    selectMode = !selectMode;
-    console.log('[SELECT] toggleSelectMode called, selectMode now:', selectMode);
-    document.body.classList.toggle('select-mode', selectMode);
-    showToast(selectMode ? 'SELECT MODE — tap frames to select' : 'SELECT MODE OFF');
-    if (!selectMode) {
-        clearSelection();
-    }
-    updateBulkActions();
-}
-
-function toggleFrameSelection(path) {
-    console.log('[SELECT] toggleFrameSelection called, path:', path);
-    if (selectedFrames.has(path)) {
-        selectedFrames.delete(path);
-        console.log('[SELECT] Deselected, size now:', selectedFrames.size);
-    } else {
-        selectedFrames.add(path);
-        console.log('[SELECT] Selected, size now:', selectedFrames.size);
-    }
-    updateBulkActions();
-}
-
-
-function updateBulkActions() {
-    const bulkCount = document.getElementById('bulkCount');
-    bulkCount.textContent = `${selectedFrames.size} selected`;
-
-    // Update card selected state
-    document.querySelectorAll('.result').forEach(card => {
-        const path = card.dataset.path;
-        card.classList.toggle('selected', selectedFrames.has(path));
-    });
-}
-
-function clearSelection() {
-    selectedFrames.clear();
-    updateBulkActions();
-}
-
-async function bulkDelete() {
-    console.log('[DELETE] bulkDelete called, selectedFrames.size:', selectedFrames.size);
-    console.log('[DELETE] selectedFrames:', Array.from(selectedFrames));
-    if (selectedFrames.size === 0) {
-        alert('No frames selected. Click on frames to select them first.');
-        return;
-    }
-
-    if (!confirm(`Delete ${selectedFrames.size} selected frame(s) from the index?`)) {
-        return;
-    }
-
-    const pathsToDelete = Array.from(selectedFrames);
-    let successCount = 0;
-    let errors = [];
-
-    for (const path of pathsToDelete) {
-        try {
-            const response = await fetch(`/frame/delete?path=${encodeURIComponent(path)}`, {
-                method: 'POST'
-            });
-
-            if (response.ok) {
-                // Remove the frame card from DOM using data attribute search
-                document.querySelectorAll('.result').forEach(card => {
-                    if (card.dataset.path === path) card.remove();
-                });
-                selectedFrames.delete(path);
-                successCount++;
-            } else {
-                errors.push(`${path}: ${response.statusText}`);
-            }
-        } catch (err) {
-            errors.push(`${path}: ${err.message}`);
-        }
-    }
-
-    updateBulkActions();
-
-    if (successCount > 0) {
-        alert(`Deleted ${successCount} frame(s)` + (errors.length ? `\n\nFailed: ${errors.length}` : ''));
-    } else if (errors.length > 0) {
-        alert(`All deletes failed:\n${errors.join('\n')}`);
-    }
-}
-
-async function deleteFrameFromModal(path) {
+async function loadFeatures() {
     try {
-        const response = await fetch(`/frame/delete?path=${encodeURIComponent(path)}`, {
-            method: 'POST'
-        });
-
-        if (!response.ok) throw new Error('Delete failed');
-
-        // Remove from DOM
-        const frameCard = document.querySelector(`.result[data-path="${CSS.escape(path)}"]`);
-        if (frameCard) frameCard.remove();
-
-        // Remove from results list
-        const idx = currentResultsList.findIndex(r => r.path === path);
-        if (idx !== -1) currentResultsList.splice(idx, 1);
-
-        // Navigate to next frame or close modal
-        if (currentModalIndex < currentResultsList.length) {
-            const r = currentResultsList[currentModalIndex];
-            openModal(r.image_url, r.episode, r.timestamp, r.path, r.frame, currentModalIndex);
-        } else if (currentResultsList.length > 0) {
-            currentModalIndex = currentResultsList.length - 1;
-            const r = currentResultsList[currentModalIndex];
-            openModal(r.image_url, r.episode, r.timestamp, r.path, r.frame, currentModalIndex);
-        } else {
-            closeModal();
+        const response = await fetch('/features');
+        const features = await response.json();
+        if (features.delete_enabled) {
+            const script = document.createElement('script');
+            script.src = '/static/admin.js';
+            document.head.appendChild(script);
         }
     } catch (err) {
-        alert(`Failed to delete: ${err.message}`);
-    }
-}
-
-async function deleteFrame(path) {
-    console.log('[DELETE] Path to delete:', path);
-
-    if (!confirm('Are you sure you want to delete this frame from the index?')) {
-        return;
-    }
-
-    try {
-        const url = `/frame/delete?path=${encodeURIComponent(path)}`;
-        console.log('[DELETE] Request URL:', url);
-
-        const response = await fetch(url, {
-            method: 'POST'
-        });
-
-        console.log('[DELETE] Response status:', response.status);
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('[DELETE] Error response:', errorText);
-            throw new Error(`Delete failed: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-
-        // Remove the frame card from DOM instead of re-running search
-        const frameCard = document.querySelector(`.result[data-path="${path}"]`);
-        if (frameCard) {
-            frameCard.remove();
-        }
-
-        // Remove from selection if it was selected
-        if (selectedFrames.has(path)) {
-            selectedFrames.delete(path);
-            updateBulkActions();
-        }
-
-        // Update stats
-        await loadStats();
-    } catch (err) {
-        alert(`Failed to delete frame: ${err.message}`);
+        // Features endpoint unavailable — delete disabled
     }
 }
 
 // Initialize on page load
 loadStats();
 loadEpisodeNames();
+loadFeatures();
 updateFilterUI();
 loadFromURL();
 loadSearchHistory();

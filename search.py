@@ -187,11 +187,10 @@ def root():
     return FileResponse("frontend/index.html")
 
 
-@app.get("/test-delete")
-def test_delete():
-    """Serve the delete test page."""
-    return FileResponse("frontend/test_delete.html")
-
+@app.get("/features")
+def feature_flags():
+    """Return feature flags based on environment configuration."""
+    return {"delete_enabled": not bool(ADMIN_PASSWORD)}
 
 
 @app.get("/about")

@@ -269,14 +269,31 @@ body.searched .button-row {
     display: none;
 }
 
-.results-random {
-    display: none;
-    text-align: center;
-    margin: 30px 0;
+.load-more-btn {
+    grid-column: 1 / -1;
+    display: block;
+    margin: 10px auto 30px;
+    padding: 12px 36px;
+    background: transparent;
+    color: var(--yellow);
+    border: 2px dashed var(--yellow);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: background 0.2s, border-style 0.2s;
 }
 
-body.searched .results-random {
-    display: block;
+.load-more-btn:hover:not(:disabled) {
+    background: rgba(255, 194, 14, 0.15);
+    border-style: solid;
+}
+
+.load-more-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
 }
 
 /* Examples */
@@ -979,16 +996,16 @@ body.select-mode .result.selected::after {
     position: absolute;
     top: 100%;
     left: 0;
-    right: 80px;
-    background: #fff;
-    border: 3px solid var(--yellow);
+    right: 0;
+    background: rgba(10, 20, 50, 0.94);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 194, 14, 0.35);
     border-top: none;
-    border-radius: 0 0 12px 12px;
+    border-radius: 0 0 10px 10px;
     z-index: 100;
     display: none;
-    max-height: 200px;
-    overflow-y: auto;
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
 }
 
 .search-history-dropdown.visible {
@@ -996,21 +1013,21 @@ body.select-mode .result.selected::after {
 }
 
 .history-item {
-    padding: 12px 16px;
+    padding: 8px 14px;
     font-family: 'Arial', sans-serif;
-    font-size: 14px;
-    color: var(--dark);
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.75);
     cursor: pointer;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .history-item:hover {
-    background: var(--yellow);
+    background: rgba(255, 194, 14, 0.18);
+    color: var(--yellow);
 }
 
 .history-item:last-child {
     border-bottom: none;
-    border-radius: 0 0 10px 10px;
 }
 
 /* Footer */
