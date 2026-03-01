@@ -8,6 +8,7 @@ using CLIP embeddings and vector similarity search.
 
 import os
 import secrets
+import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +16,7 @@ from pathlib import Path
 import lancedb
 import onnxruntime as ort
 from clip_tokenizer import CLIPTokenizer
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -158,20 +159,36 @@ _stats_cache["data"] = _compute_stats()
 _stats_cache["timestamp"] = time.time()
 print(f"✓ Stats ready: {_stats_cache['data']['total_frames']} frames")
 
-# Search logging
-SEARCH_LOG_PATH = Path("data/search_log.tsv")
+# Search logging (SQLite)
+SEARCH_DB_PATH = Path("data/searches.db")
+
+
+def _init_search_db():
+    with sqlite3.connect(SEARCH_DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS searches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                query TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                results_count INTEGER NOT NULL,
+                ip TEXT
+            )
+        """)
+
+
+_init_search_db()
 
 
 def log_search(query: str, mode: str, results_count: int, ip: str = ""):
-    """Append search query to log file."""
     try:
-        timestamp = datetime.now().isoformat()
-        # TSV format: timestamp, query, mode, results_count, ip
-        line = f"{timestamp}\t{query}\t{mode}\t{results_count}\t{ip}\n"
-        with open(SEARCH_LOG_PATH, "a") as f:
-            f.write(line)
+        with sqlite3.connect(SEARCH_DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO searches (timestamp, query, mode, results_count, ip) VALUES (?, ?, ?, ?, ?)",
+                (datetime.now().isoformat(), query, mode, results_count, ip)
+            )
     except Exception:
-        pass  # Don't let logging errors break searches
+        pass
 
 
 def embed_text(query: str) -> list[float]:
@@ -228,6 +245,7 @@ def legal():
 @limiter.limit("60/minute")
 def search(
     request: Request,
+    background_tasks: BackgroundTasks,
     q: str = Query(..., description="Natural language search query"),
     limit: int = Query(20, ge=1, le=100, description="Number of results to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
@@ -295,7 +313,7 @@ def search(
 
             # Log the search (only on first page)
             if offset == 0:
-                log_search(q, mode, len(results), request.client.host if request.client else "")
+                background_tasks.add_task(log_search, q, mode, len(results), request.client.host if request.client else "")
 
             return [{
                 "episode": r["episode"],
@@ -342,7 +360,7 @@ def search(
 
             # Log the search (only on first page)
             if offset == 0:
-                log_search(q, mode, len(results), request.client.host if request.client else "")
+                background_tasks.add_task(log_search, q, mode, len(results), request.client.host if request.client else "")
 
             return [{
                 "episode": r["episode"],
@@ -378,6 +396,39 @@ def stats(request: Request, refresh: bool = False):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/admin/searches")
+def admin_searches(
+    limit: int = Query(200, ge=1, le=5000),
+    admin: bool = Depends(verify_admin),
+):
+    """View recent searches and top queries."""
+    with sqlite3.connect(SEARCH_DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+
+        total = conn.execute("SELECT COUNT(*) FROM searches").fetchone()[0]
+        today = conn.execute(
+            "SELECT COUNT(*) FROM searches WHERE date(timestamp) = date('now')"
+        ).fetchone()[0]
+        top_queries = conn.execute(
+            """SELECT query, COUNT(*) as count
+               FROM searches
+               GROUP BY lower(query)
+               ORDER BY count DESC
+               LIMIT 50"""
+        ).fetchall()
+        recent = conn.execute(
+            "SELECT timestamp, query, mode, results_count, ip FROM searches ORDER BY id DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+
+    return {
+        "total": total,
+        "today": today,
+        "top_queries": [{"query": r["query"], "count": r["count"]} for r in top_queries],
+        "recent": [dict(r) for r in recent],
+    }
 
 
 @app.get("/random")
