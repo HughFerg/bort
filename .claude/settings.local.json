@@ -27,7 +27,17 @@
       "Bash(node --check:*)",
       "Bash(open:*)",
       "Bash(node -e:*)",
-      "WebFetch(domain:porkbun.com)"
+      "WebFetch(domain:porkbun.com)",
+      "Bash(tail:*)",
+      "Bash(grep:*)",
+      "Bash(chmod +x:*)",
+      "WebFetch(domain:en.wikipedia.org)",
+      "WebFetch(domain:simpsons.fandom.com)",
+      "WebFetch(domain:simpsonswiki.com)",
+      "WebFetch(domain:www.goldderby.com)",
+      "WebFetch(domain:www.imdb.com)",
+      "WebFetch(domain:www.simpsonsarchive.com)",
+      "WebFetch(domain:ultimatepopculture.fandom.com)"
     ]
   }
 }

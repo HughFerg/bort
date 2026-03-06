@@ -12,27 +12,36 @@ This script:
 
 import argparse
 import json
+import re
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 import lancedb
+import numpy as np
 import open_clip
 import torch
 from PIL import Image
 from tqdm import tqdm
 from transformers import BlipProcessor, BlipForConditionalGeneration
 
+# --- Thresholds ---
+HARD_SKIP_INTRO_SEC = 20       # Always skip first N seconds (opening title card)
+DEDUP_THRESHOLD = 0.96         # Skip frame entirely if this similar to previous indexed frame
+CAPTION_REUSE_THRESHOLD = 0.85 # Reuse previous caption if this similar (saves BLIP calls)
+INTRO_FINGERPRINT_THRESHOLD = 0.97  # Skip intro frame if this similar to season fingerprint
 
-def extract_frames(video_path: str, output_dir: str, interval: int = 3) -> None:
-    """
-    Extract one frame every `interval` seconds from video.
+# Episodes with non-standard openings — skipped entirely from intro fingerprint logic.
+# If one of these is the first episode of a season it would poison the fingerprint for
+# all subsequent episodes. They're also skipped from filtering so their unique openings
+# are always preserved in full.
+NON_STANDARD_INTRO_EPISODES = {
+    "s08e01",  # Treehouse of Horror VII  (S8 premiere)
+    "s12e01",  # Treehouse of Horror XI   (S12 premiere)
+}
 
-    Args:
-        video_path: Path to video file
-        output_dir: Directory to save frames
-        interval: Seconds between frames (default 3)
-    """
+
+def extract_frames(video_path: str, output_dir: str, interval: int = 1) -> None:
+    """Extract one frame every `interval` seconds from video."""
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -64,32 +73,13 @@ def generate_caption(image_path: str, processor, caption_model) -> str:
     """Generate a caption for an image using BLIP."""
     image = Image.open(image_path).convert('RGB')
     inputs = processor(image, return_tensors="pt")
-
     with torch.no_grad():
         outputs = caption_model.generate(**inputs, max_length=50)
-
-    caption = processor.decode(outputs[0], skip_special_tokens=True)
-    return caption
+    return processor.decode(outputs[0], skip_special_tokens=True)
 
 
 def detect_characters_clip(image_path: str, model, preprocess, tokenizer, max_chars: int = 10, min_score: float = 0.27, score_gap: float = 0.04) -> list[str]:
-    """
-    Detect Simpsons characters in an image using zero-shot CLIP classification.
-    (Legacy method - use detect_characters_vit for better accuracy)
-
-    Args:
-        image_path: Path to image file
-        model: CLIP model
-        preprocess: CLIP image preprocessor
-        tokenizer: CLIP text tokenizer
-        max_chars: Maximum number of characters to return (default 3, increased for better detection)
-        min_score: Minimum absolute score to consider (default 0.24, lowered from 0.30 for 87% more detections)
-        score_gap: Maximum score difference from top score to include (default 0.05, increased for secondary characters)
-
-    Returns:
-        List of detected character names (top N by confidence)
-    """
-    # Main Simpsons characters
+    """Detect Simpsons characters using zero-shot CLIP classification."""
     characters = [
         "Homer Simpson", "Marge Simpson", "Bart Simpson", "Lisa Simpson", "Maggie Simpson",
         "Mr. Burns", "Smithers", "Ned Flanders", "Moe Szyslak", "Barney Gumble",
@@ -98,37 +88,24 @@ def detect_characters_clip(image_path: str, model, preprocess, tokenizer, max_ch
         "Comic Book Guy", "Sideshow Bob", "Otto Mann", "Patty Bouvier", "Selma Bouvier"
     ]
 
-    # Load and preprocess image
     image = preprocess(Image.open(image_path)).unsqueeze(0)
-
-    # Tokenize character names - simpler prompt works better
     text = tokenizer([f"{char}" for char in characters])
 
-    # Compute similarities
     with torch.no_grad():
         image_features = model.encode_image(image)
         text_features = model.encode_text(text)
-
         image_features /= image_features.norm(dim=-1, keepdim=True)
         text_features /= text_features.norm(dim=-1, keepdim=True)
-
         similarity = (image_features @ text_features.T)[0]
 
-    # Sort by similarity
     scores = [(i, similarity[i].item()) for i in range(len(characters))]
     scores.sort(key=lambda x: x[1], reverse=True)
 
-    # Only include characters that are:
-    # 1. Above minimum score threshold
-    # 2. Within score_gap of the top score
-    # 3. Within max_chars limit
     detected = []
     if scores and scores[0][1] >= min_score:
         top_score = scores[0][1]
-
         for i, score in scores[:max_chars]:
             if score >= min_score and (top_score - score) <= score_gap:
-                # Remove "Simpson" suffix for main family members to shorten tags
                 char_name = characters[i].replace(" Simpson", "")
                 detected.append(char_name)
 
@@ -144,40 +121,23 @@ def load_intro_cache(cache_file: str = "intro_credits.json") -> dict:
     return {}
 
 
-def get_episode_timestamps(filename: str, cache: dict, default_intro: int = 90, default_credits: int = 40) -> tuple[int, int]:
-    """
-    Get intro end and credits start timestamps for an episode.
-
-    Args:
-        filename: Video/episode filename
-        cache: Loaded cache from detect_intro.py
-        default_intro: Default intro duration in seconds
-        default_credits: Default credits duration in seconds
-
-    Returns:
-        Tuple of (intro_end_seconds, credits_start_seconds)
-    """
-    # Try exact match
+def get_episode_intro_end(filename: str, cache: dict, default_intro: int = 90) -> int:
+    """Get intro end timestamp for an episode from cache."""
     if filename in cache:
-        data = cache[filename]
-        return (int(data.get("intro_end", default_intro)),
-                int(data.get("credits_start", -default_credits)))
-
-    # Try partial match
+        return int(cache[filename].get("intro_end", default_intro))
     for cached_name, data in cache.items():
         if filename.split(".")[0] in cached_name or cached_name.split(".")[0] in filename:
-            return (int(data.get("intro_end", default_intro)),
-                    int(data.get("credits_start", -default_credits)))
-
-    return (default_intro, -default_credits)
+            return int(data.get("intro_end", default_intro))
+    return default_intro
 
 
 def index_frames(
     frames_dir: str,
     db_path: str = "data/simpsons.lance",
-    frame_interval: int = 3,
+    frame_interval: int = 1,
     use_vit_detection: bool = False,
-    intro_cache_file: str = None
+    intro_cache_file: str = None,
+    season_filter: str = None,
 ) -> None:
     """
     Index all frames in directory to LanceDB.
@@ -188,6 +148,7 @@ def index_frames(
         frame_interval: Seconds between frames (for timestamp calculation)
         use_vit_detection: Use HuggingFace ViT for character detection (more accurate)
         intro_cache_file: Path to intro/credits cache JSON (from detect_intro.py)
+        season_filter: Only process episodes from this season (e.g. "s01")
     """
     print("Loading CLIP model...")
     model, _, preprocess = open_clip.create_model_and_transforms(
@@ -202,7 +163,6 @@ def index_frames(
     caption_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
     caption_model.eval()
 
-    # Load improved character detector if requested
     char_detector = None
     if use_vit_detection:
         try:
@@ -212,18 +172,17 @@ def index_frames(
         except ImportError as e:
             print(f"Warning: Could not load ViT detector ({e}), using CLIP fallback")
 
-    # Load intro/credits cache if provided
     intro_cache = {}
     if intro_cache_file:
         intro_cache = load_intro_cache(intro_cache_file)
         if intro_cache:
-            print(f"Loaded intro/credits timestamps for {len(intro_cache)} episodes")
+            print(f"Loaded intro timestamps for {len(intro_cache)} episodes")
 
     db = lancedb.connect(db_path)
     frames_path = Path(frames_dir)
     episode_dirs = sorted([d for d in frames_path.iterdir() if d.is_dir()])
 
-    # Get existing frames (by path) to prevent duplicates
+    # Get existing frames to avoid re-indexing
     existing_paths = set()
     if "frames" in db.table_names():
         table = db.open_table("frames")
@@ -234,35 +193,68 @@ def index_frames(
             existing_paths = set(r["path"] for r in all_frames)
             print(f"Found {len(existing_paths)} existing frames in database")
 
+    # Per-season intro fingerprints for "one intro" deduplication.
+    # Built from the first 2 episodes of each season so atypical ep-1 openings
+    # (early S1/S2 variants, specials) don't poison the fingerprint.
+    # Filtering only activates from episode 3 onward, so Treehouse of Horror
+    # and other non-standard intros naturally survive (they won't match).
+    season_intro_vectors: dict[str, list] = {}
+    season_episode_count: dict[str, int] = {}  # how many episodes indexed per season
+    FINGERPRINT_BUILD_EPS = 1   # build fingerprint from first N standard-intro eps
+    FINGERPRINT_APPLY_EPS = 1   # start filtering from ep N+1 onward
+
     total_frames = 0
-    first_episode = True
+    first_write = True
 
     for episode_dir in episode_dirs:
         episode_id = episode_dir.name
-        frame_paths = sorted(episode_dir.glob("*.jpg"))
 
+        # Season filter for staging / partial runs
+        if season_filter and season_filter.lower() not in episode_id.lower():
+            continue
+
+        frame_paths = sorted(episode_dir.glob("*.jpg"))
         if not frame_paths:
             continue
 
-        # Calculate episode length to filter credits
-        max_frame_num = max(int(p.stem.split("_")[1]) for p in frame_paths)
-        episode_length_sec = max_frame_num * frame_interval
+        # Determine season and episode position within it
+        season_match = re.search(r's(\d+)', episode_id, re.I)
+        season = season_match.group(0).lower() if season_match else None
+        # Strip to e.g. "s08e01" for lookup — handles filenames like "s08e01_title"
+        episode_key = re.search(r's\d+e\d+', episode_id, re.I)
+        episode_key = episode_key.group(0).lower() if episode_key else None
+        has_standard_intro = episode_key not in NON_STANDARD_INTRO_EPISODES
+        # Only count episodes with standard intros — keeps the fingerprint build
+        # window accurate when a non-standard ep (e.g. TOH VII) is the season premiere
+        if season and has_standard_intro:
+            season_episode_count[season] = season_episode_count.get(season, 0) + 1
+        ep_num = season_episode_count.get(season, 0) if season else 0
+        is_building_fingerprint = has_standard_intro and season is not None and ep_num <= FINGERPRINT_BUILD_EPS
+        is_filtering_intro = has_standard_intro and season is not None and ep_num > FINGERPRINT_APPLY_EPS
 
-        # Get intro/credits timestamps (from cache or defaults)
-        intro_end, credits_start = get_episode_timestamps(episode_id, intro_cache)
-        if credits_start < 0:  # Negative means "from end"
-            credits_start = episode_length_sec + credits_start
+        intro_end = get_episode_intro_end(episode_id, intro_cache)
 
         print(f"Indexing {episode_id} ({len(frame_paths)} frames)...")
-        print(f"  Filtering: intro < {intro_end}s, credits > {credits_start}s")
+        if not has_standard_intro:
+            label = "Non-standard opening — skipping fingerprint"
+        elif is_building_fingerprint:
+            label = f"Building fingerprint (ep {ep_num}/{FINGERPRINT_BUILD_EPS})"
+        elif is_filtering_intro:
+            label = "Filtering intro against fingerprint"
+        else:
+            label = "No fingerprint yet (keeping all intro frames)"
+        print(f"  Intro ends at ~{intro_end}s | {label}")
 
-        # Process frames for this episode
+        # Per-episode state (reset each episode)
+        last_embedding_arr = None
+        last_caption = None
         records = []
-        skipped_intro = 0
-        skipped_credits = 0
+        skipped_title_card = 0
+        skipped_dedup = 0
+        skipped_intro_repeat = 0
         skipped_existing = 0
+
         for frame_path in tqdm(frame_paths, desc=f"  {episode_id}", leave=False):
-            # Skip if frame already exists in database
             if str(frame_path) in existing_paths:
                 skipped_existing += 1
                 continue
@@ -270,18 +262,46 @@ def index_frames(
             frame_num = int(frame_path.stem.split("_")[1])
             timestamp_sec = frame_num * frame_interval
 
-            # Skip intro and credits
-            if timestamp_sec <= intro_end:
-                skipped_intro += 1
-                continue
-            if timestamp_sec >= credits_start:
-                skipped_credits += 1
+            # Always hard-skip the opening title card
+            if timestamp_sec < HARD_SKIP_INTRO_SEC:
+                skipped_title_card += 1
                 continue
 
+            in_intro_region = timestamp_sec <= intro_end
+
+            # Compute CLIP embedding (needed for dedup and fingerprint checks)
             embedding = embed_image(str(frame_path), model, preprocess)
-            caption = generate_caption(str(frame_path), processor, caption_model)
+            embedding_arr = np.array(embedding)
 
-            # Use ViT detector if available, otherwise fall back to CLIP
+            # Inline deduplication — skip if too similar to last indexed frame.
+            # Also flag for caption reuse if similar but not identical.
+            reuse_caption = False
+            if last_embedding_arr is not None:
+                sim = float(np.dot(embedding_arr, last_embedding_arr))
+                if sim >= DEDUP_THRESHOLD:
+                    skipped_dedup += 1
+                    continue
+                reuse_caption = sim >= CAPTION_REUSE_THRESHOLD
+
+            # Intro fingerprint check — skip intro frames that match the
+            # season's standard elements, but only once we have enough episodes
+            # to have a reliable fingerprint (avoids false positives from
+            # atypical ep-1 openings like early S1 or specials).
+            if in_intro_region and is_filtering_intro:
+                fingerprint = season_intro_vectors.get(season, [])
+                if fingerprint:
+                    max_sim = max(float(np.dot(embedding_arr, fp)) for fp in fingerprint)
+                    if max_sim > INTRO_FINGERPRINT_THRESHOLD:
+                        skipped_intro_repeat += 1
+                        continue
+
+            # Caption: reuse from previous frame if visually similar, otherwise run BLIP
+            if reuse_caption and last_caption:
+                caption = last_caption
+            else:
+                caption = generate_caption(str(frame_path), processor, caption_model)
+
+            # Character detection
             if char_detector:
                 characters = char_detector.detect(str(frame_path))
             else:
@@ -297,48 +317,55 @@ def index_frames(
                 "vector": embedding
             })
 
-        # Write this episode to database
+            # Update per-episode rolling state
+            last_embedding_arr = embedding_arr
+            last_caption = caption
+
+            # Add to season fingerprint while still in the build window
+            if in_intro_region and is_building_fingerprint:
+                season_intro_vectors.setdefault(season, []).append(embedding_arr)
+
+        # Write episode to database
         if records:
-            if first_episode:
-                # Check if table already exists
-                existing_tables = db.table_names()
-                if "frames" in existing_tables:
-                    print(f"  → Appending {len(records)} frames to existing database...")
+            if first_write:
+                if "frames" in db.table_names():
                     table = db.open_table("frames")
                     table.add(records)
                 else:
-                    print(f"  → Creating new database with {len(records)} frames...")
                     db.create_table("frames", records)
-                first_episode = False
+                first_write = False
             else:
-                print(f"  → Appending {len(records)} frames to database...")
                 table = db.open_table("frames")
                 table.add(records)
 
             total_frames += len(records)
-            print(f"  ✓ {episode_id} indexed ({total_frames} total frames so far)")
-            if skipped_intro or skipped_credits or skipped_existing:
-                print(f"    (Skipped {skipped_intro} intro + {skipped_credits} credits + {skipped_existing} existing frames)")
+            print(f"  ✓ {episode_id}: {len(records)} frames indexed ({total_frames} total)")
+            skips = []
+            if skipped_title_card: skips.append(f"{skipped_title_card} title card")
+            if skipped_dedup:      skips.append(f"{skipped_dedup} duplicates")
+            if skipped_intro_repeat: skips.append(f"{skipped_intro_repeat} intro repeats")
+            if skipped_existing:   skips.append(f"{skipped_existing} existing")
+            if skips:
+                print(f"    Skipped: {' + '.join(skips)}")
+
+        # Log fingerprint status after each episode
+        if season and is_building_fingerprint:
+            fp_size = len(season_intro_vectors.get(season, []))
+            print(f"  → Season {season.upper()} fingerprint: {fp_size} frames (ep {ep_num}/{FINGERPRINT_BUILD_EPS})")
 
     if total_frames > 0:
-        print(f"\n✓ Indexing complete: {total_frames} frames across {len(episode_dirs)} episodes")
+        print(f"\n✓ Indexing complete: {total_frames} frames indexed")
     else:
-        print("No frames found to index")
+        print("No new frames found to index")
 
 
 def process_videos(
     videos_path: str,
     output_dir: str = "data/frames",
-    interval: int = 3
+    interval: int = 1,
+    season_filter: str = None,
 ) -> None:
-    """
-    Extract frames from all video files in a directory.
-
-    Args:
-        videos_path: Directory containing video files
-        output_dir: Root directory to save extracted frames
-        interval: Seconds between frames
-    """
+    """Extract frames from all video files in a directory."""
     videos_dir = Path(videos_path)
 
     if not videos_dir.exists():
@@ -352,7 +379,11 @@ def process_videos(
         print(f"No video files found in {videos_path}")
         return
 
-    print(f"Found {len(video_files)} video files")
+    if season_filter:
+        video_files = [v for v in video_files if season_filter.lower() in v.stem.lower()]
+        print(f"Season filter '{season_filter}': {len(video_files)} videos")
+    else:
+        print(f"Found {len(video_files)} video files")
 
     for video_path in sorted(video_files):
         stem = video_path.stem
@@ -372,58 +403,29 @@ def main():
     parser = argparse.ArgumentParser(
         description="Extract and index frames from Simpsons episodes"
     )
-    parser.add_argument(
-        "--videos",
-        type=str,
-        help="Path to directory containing video files"
-    )
-    parser.add_argument(
-        "--frames",
-        type=str,
-        default="data/frames",
-        help="Directory to store extracted frames (default: data/frames)"
-    )
-    parser.add_argument(
-        "--interval",
-        type=int,
-        default=3,
-        help="Seconds between extracted frames (default: 3)"
-    )
-    parser.add_argument(
-        "--index-only",
-        action="store_true",
-        help="Skip frame extraction, only index existing frames"
-    )
-    parser.add_argument(
-        "--db",
-        type=str,
-        default="data/simpsons.lance",
-        help="Path to LanceDB database (default: data/simpsons.lance)"
-    )
-    parser.add_argument(
-        "--use-vit",
-        action="store_true",
-        help="Use HuggingFace ViT model for improved character detection"
-    )
-    parser.add_argument(
-        "--intro-cache",
-        type=str,
-        help="Path to intro/credits cache JSON (from detect_intro.py)"
-    )
+    parser.add_argument("--videos", type=str, help="Path to directory containing video files")
+    parser.add_argument("--frames", type=str, default="data/frames", help="Directory to store extracted frames")
+    parser.add_argument("--interval", type=int, default=1, help="Seconds between extracted frames (default: 1)")
+    parser.add_argument("--index-only", action="store_true", help="Skip frame extraction, only index existing frames")
+    parser.add_argument("--db", type=str, default="data/simpsons.lance", help="Path to LanceDB database")
+    parser.add_argument("--use-vit", action="store_true", help="Use HuggingFace ViT model for improved character detection")
+    parser.add_argument("--intro-cache", type=str, help="Path to intro/credits cache JSON (from detect_intro.py)")
+    parser.add_argument("--season", type=str, help="Only process this season (e.g. s01) — useful for staging")
 
     args = parser.parse_args()
 
     if not args.index_only:
         if not args.videos:
             parser.error("--videos is required unless --index-only is specified")
-        process_videos(args.videos, args.frames, args.interval)
+        process_videos(args.videos, args.frames, args.interval, season_filter=args.season)
 
     index_frames(
         args.frames,
         args.db,
         args.interval,
         use_vit_detection=args.use_vit,
-        intro_cache_file=args.intro_cache
+        intro_cache_file=args.intro_cache,
+        season_filter=args.season,
     )
 
 

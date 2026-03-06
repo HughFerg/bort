@@ -14,18 +14,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flanderize - Simpsons Scene Search</title>
     <meta name="description" content="A visual search engine for The Simpsons. Find any scene or frame by describing what you see.">
-    <meta name="keywords" content="Simpsons, search, scenes, frames, visual search">
+    <meta name="theme-color" content="#0F4C81">
+    <link rel="canonical" href="https://flanderize.com/">
 
     <!-- Open Graph / Social -->
     <meta property="og:type" content="website">
+    <meta property="og:url" content="https://flanderize.com/">
     <meta property="og:title" content="Flanderize - Simpsons Scene Search">
-    <meta property="og:description" content="A visual search engine for The Simpsons. Find any scene by describing what you see.">
+    <meta property="og:description" content="A visual search engine for The Simpsons. Find any scene or frame by describing what you see.">
     <meta property="og:site_name" content="Flanderize">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Flanderize - Simpsons Scene Search">
-    <meta name="twitter:description" content="A visual search engine for The Simpsons. Find any scene by describing what you see.">
+    <meta name="twitter:description" content="A visual search engine for The Simpsons. Find any scene or frame by describing what you see.">
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Flanderize",
+      "description": "A visual search engine for The Simpsons. Find any scene or frame by describing what you see.",
+      "url": "https://flanderize.com",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://flanderize.com/?q={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
 
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23FFB6D9'/><circle cx='50' cy='50' r='20' fill='%23FFF'/><ellipse cx='45' cy='40' rx='8' ry='6' fill='%23FF69B4' opacity='0.6'/><ellipse cx='60' cy='45' rx='6' ry='5' fill='%23FF69B4' opacity='0.6'/><ellipse cx='50' cy='55' rx='7' ry='5' fill='%23FF69B4' opacity='0.6'/></svg>">
     <link rel="stylesheet" href="/static/styles.css?v=24">
@@ -68,11 +89,11 @@
         </div>
 
         <div class="examples">
-            <button class="example-btn" onclick="searchExample('golden light through curtains')">golden light through curtains</button>
-            <button class="example-btn" onclick="searchExample('sprinting in a panic')">sprinting in a panic</button>
-            <button class="example-btn" onclick="searchExample('face to face in a doorway')">face to face in a doorway</button>
-            <button class="example-btn" onclick="searchExample('alone in a dark room')">alone in a dark room</button>
-            <button class="example-btn" onclick="searchExample('a crowd erupts in celebration')">a crowd erupts in celebration</button>
+            <button class="example-btn" onclick="searchExample('family')">family</button>
+            <button class="example-btn" onclick="searchExample('space')">space</button>
+            <button class="example-btn" onclick="searchExample('purple')">purple</button>
+            <button class="example-btn" onclick="searchExample('sadness')">sadness</button>
+            <button class="example-btn" onclick="searchExample('triangles')">triangles</button>
         </div>
     </div>
 

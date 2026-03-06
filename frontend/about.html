@@ -4,7 +4,48 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>About - Flanderize</title>
-    <link rel="stylesheet" href="/static/styles.css?v=22">
+    <meta name="description" content="About Flanderize — a visual search engine for The Simpsons.">
+    <meta name="theme-color" content="#0F4C81">
+    <link rel="canonical" href="https://flanderize.com/about">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://flanderize.com/about">
+    <meta property="og:title" content="About - Flanderize">
+    <meta property="og:description" content="About Flanderize — a visual search engine for The Simpsons.">
+    <meta property="og:site_name" content="Flanderize">
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is Flanderize?",
+          "acceptedAnswer": { "@type": "Answer", "text": "A visual search engine for seasons 1–12 of The Simpsons. Describe what you're looking for — a scene, a vibe, a specific shot — and it finds the frame." }
+        },
+        {
+          "@type": "Question",
+          "name": "How does Flanderize work?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Every frame runs through CLIP — a neural network that understands images and text in the same way. Your search gets the same treatment, then it finds the closest match." }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does Flanderize sometimes return weird results?",
+          "acceptedAnswer": { "@type": "Answer", "text": "CLIP understands what things look like, not who they are. Character names don't always work — describe what you're seeing instead." }
+        },
+        {
+          "@type": "Question",
+          "name": "Why only the first twelve seasons?",
+          "acceptedAnswer": { "@type": "Answer", "text": "I can't keep watching past that point." }
+        }
+      ]
+    }
+    </script>
+
+    <link rel="stylesheet" href="/static/styles.css?v=24">
     <style>
         body {
             display: block;
@@ -52,32 +93,31 @@
 
     <div class="about-item">
         <h2>What is Flanderize?</h2>
-        <p>A visual search engine for the first 12 seasons of The Simpsons. Describe a scene, a mood, a visual, and it finds the matching frame. Every indexed episode is searchable by what's actually happening on screen.</p>
+        <p>A visual search engine for seasons 1–12 of The Simpsons. Describe what you're looking for — a scene, a vibe, a specific shot — and it finds the frame.</p>
     </div>
 
     <div class="about-item">
         <h2>How does it work?</h2>
-        <p>Each frame is encoded into a vector embedding using CLIP, a neural network trained to understand images and text together. When you search, your query is embedded the same way and compared against every frame.</p>
+        <p>Every frame runs through CLIP — a neural network that understands images and text in the same way. Your search gets the same treatment, then it finds the closest match.</p>
     </div>
 
     <div class="about-item">
         <h2>Why does it sometimes return weird results?</h2>
-        <p>CLIP understands visual concepts, not Simpsons lore. Searching for specific characters will not always work well. Describe what you want to see instead.</p>
+        <p>CLIP understands what things look like, not who they are. Character names don't always work — describe what you're seeing instead.</p>
     </div>
-    
+
     <div class="about-item">
         <h2>Why only the first twelve seasons?</h2>
-        <p>I personally can't keep watching beyond that point.</p>
+        <p>I can't keep watching past that point.</p>
     </div>
 
     <div class="about-item">
         <h2>What should I search?</h2>
-        <p>Whatever you can think of! My favorite queries have been abstract or a visually distinct idea like "color haze"</p>
+        <p>Anything. The best searches are weirdly specific — lighting, body language, a mood. "someone realising they made a terrible mistake" works better than "Homer sad".</p>
     </div>
 
-    <div class="about-item">
-        <h2>Legal</h2>
-        <p>This is a fan-made tool. The Simpsons and all related content are trademarks of and copyrighted by 20th Television and The Walt Disney Company. This site is not affiliated with or endorsed by the copyright holders. Used under fair use for non-commercial, educational purposes.</p>
-    </div>
+    <p style="margin-top: 40px; font-family: 'Courier New', monospace; font-size: 11px; color: rgba(255,255,255,0.3); line-height: 1.6;">
+        Fan-made tool. The Simpsons and all related content are trademarks of and copyrighted by 20th Television and The Walt Disney Company. Not affiliated with or endorsed by the copyright holders. Used under fair use for non-commercial, educational purposes.
+    </p>
 </body>
 </html>

@@ -31,6 +31,7 @@ limiter = Limiter(key_func=get_remote_address)
 # Admin authentication
 security = HTTPBasic()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+SITE_URL = os.environ.get("SITE_URL", "https://flanderize.com")
 
 # External CDN for images (if hosting frames on R2/S3)
 # If set, images are served from CDN instead of locally
@@ -208,6 +209,37 @@ def root():
 def feature_flags():
     """Return feature flags based on environment configuration."""
     return {"delete_enabled": not bool(ADMIN_PASSWORD)}
+
+
+@app.get("/robots.txt")
+def robots_txt():
+    content = f"""User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /frame/
+Sitemap: {SITE_URL}/sitemap.xml
+"""
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(content)
+
+
+@app.get("/sitemap.xml")
+def sitemap_xml():
+    content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>{SITE_URL}/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>{SITE_URL}/about</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+</urlset>"""
+    from fastapi.responses import Response
+    return Response(content=content, media_type="application/xml")
 
 
 @app.get("/about")
