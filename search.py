@@ -9,6 +9,7 @@ using CLIP embeddings and vector similarity search.
 import os
 import secrets
 import sqlite3
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +17,7 @@ from pathlib import Path
 import lancedb
 import onnxruntime as ort
 from clip_tokenizer import CLIPTokenizer
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -31,6 +32,7 @@ limiter = Limiter(key_func=get_remote_address)
 # Admin authentication
 security = HTTPBasic()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+DELETE_ENABLED = os.environ.get("DELETE_ENABLED", "false").lower() == "true"
 SITE_URL = os.environ.get("SITE_URL", "https://flanderize.com")
 
 # External CDN for images (if hosting frames on R2/S3)
@@ -208,7 +210,7 @@ def root():
 @app.get("/features")
 def feature_flags():
     """Return feature flags based on environment configuration."""
-    return {"delete_enabled": not bool(ADMIN_PASSWORD)}
+    return {"delete_enabled": DELETE_ENABLED}
 
 
 @app.get("/robots.txt")
@@ -277,7 +279,6 @@ def legal():
 @limiter.limit("60/minute")
 def search(
     request: Request,
-    background_tasks: BackgroundTasks,
     q: str = Query(..., description="Natural language search query"),
     limit: int = Query(20, ge=1, le=100, description="Number of results to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
@@ -345,7 +346,7 @@ def search(
 
             # Log the search (only on first page)
             if offset == 0:
-                background_tasks.add_task(log_search, q, mode, len(results), request.client.host if request.client else "")
+                threading.Thread(target=log_search, args=(q, mode, len(results), request.client.host if request.client else ""), daemon=True).start()
 
             return [{
                 "episode": r["episode"],
@@ -392,7 +393,7 @@ def search(
 
             # Log the search (only on first page)
             if offset == 0:
-                background_tasks.add_task(log_search, q, mode, len(results), request.client.host if request.client else "")
+                threading.Thread(target=log_search, args=(q, mode, len(results), request.client.host if request.client else ""), daemon=True).start()
 
             return [{
                 "episode": r["episode"],

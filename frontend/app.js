@@ -228,7 +228,8 @@ async function search() {
         const response = await fetch(buildSearchUrl(query, 0));
 
         if (!response.ok) {
-            throw new Error(`Search failed: ${response.statusText}`);
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `Search failed (HTTP ${response.status})`);
         }
 
         const rawResults = await response.json();

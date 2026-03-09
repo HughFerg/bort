@@ -272,7 +272,7 @@ body.searched .button-row {
 .load-more-btn {
     grid-column: 1 / -1;
     display: block;
-    margin: 10px auto 30px;
+    margin: 30px auto 30px;
     padding: 12px 36px;
     background: transparent;
     color: var(--yellow);
@@ -1075,18 +1075,32 @@ body:not(.searched) .disclaimer {
     text-decoration: underline;
 }
 
-/* Responsive */
+/* ── Mobile ────────────────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
+    body {
+        padding: 12px;
+    }
+
+    body.searched {
+        padding-top: 12px;
+    }
+
+    /* Title: clamp so it never overflows narrow phones */
     h1 {
-        font-size: 4rem;
+        font-size: clamp(2.2rem, 11vw, 4rem);
+        letter-spacing: -2px;
+        text-shadow: 2px 2px 0 var(--orange), 5px 5px 0 rgba(0,0,0,0.3);
     }
 
     body.searched h1 {
-        font-size: 1.5rem;
+        font-size: 1.3rem;
+        letter-spacing: -0.5px;
     }
 
+    /* Search box stacks vertically */
     .search-box {
         flex-direction: column;
+        gap: 8px;
     }
 
     button {
@@ -1094,7 +1108,103 @@ body:not(.searched) .disclaimer {
     }
 
     .search-container {
-        padding: 20px 15px;
+        padding: 16px 12px;
+        border-radius: 14px;
+    }
+
+    body.searched .search-container {
+        padding: 10px 12px;
+    }
+
+    /* Top row: keep side-by-side but tighter */
+    body.searched .top-row {
+        margin-bottom: 10px;
+    }
+
+    /* Filters: override inline layout so pills wrap properly */
+    body.searched .filter-group {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    body.searched .filter-label {
+        display: block;
+        margin-right: 0;
+    }
+
+    body.searched .filter-pills {
+        display: flex;
+        flex-wrap: wrap;
+    }
+
+    /* Filter pills smaller on mobile */
+    .filter-pill {
+        padding: 5px 11px;
+        font-size: 10px;
+    }
+
+    /* Results: 2-col on small tablets, 1-col below 480px */
+    #results {
+        gap: 10px;
+    }
+
+    /* Similar header wraps */
+    .similar-header {
+        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 12px;
+        padding: 10px 12px;
+    }
+
+    /* Modal: full width, close button stays inside viewport */
+    .modal-content {
+        max-width: 96%;
+    }
+
+    .modal-close {
+        top: -12px;
+        right: -12px;
+        width: 32px;
+        height: 32px;
+        font-size: 18px;
+    }
+
+    .modal-info {
+        padding: 12px 14px;
+    }
+
+    .modal-meta {
+        flex-direction: column;
+        gap: 2px;
+        margin-bottom: 8px;
+    }
+
+    .modal-episode {
+        font-size: 13px;
+    }
+
+    .modal-btn {
+        padding: 8px 14px;
+        font-size: 11px;
+    }
+
+    /* Keyboard hint irrelevant on mobile */
+    .keyboard-hint {
+        display: none;
+    }
+
+    /* Load more */
+    .load-more-btn {
+        padding: 12px 20px;
+    }
+}
+
+/* Very small phones */
+@media (max-width: 400px) {
+    #results {
+        grid-template-columns: 1fr;
     }
 }
 
